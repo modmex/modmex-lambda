@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "modmex-lambda"
+version = "0.1.0"
+description = "Ultra-lightweight AWS Lambda utilities for API Gateway routing and event handling."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Modmex" }]
+dependencies = [
+    "modmex (>=1.1.10,<2.0.0)"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["modmex_lambda"]
+
+[tool.poetry.group.dev.dependencies]
+pytest-cov = "^7.1.0"
+
