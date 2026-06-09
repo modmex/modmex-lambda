@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import inspect
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, Annotated, get_args, get_origin
 
 from modmex import BaseModel, FieldInfo, create_model
-from typing_extensions import Annotated, get_args, get_origin
 
 import modmex_lambda.event_handler.params as public_params
 from modmex_lambda.event_handler.dependencies.compat import (
