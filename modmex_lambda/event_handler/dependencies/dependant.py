@@ -131,12 +131,15 @@ def get_dependant(
 
         depends = _get_depends_from_annotation(param.annotation)
         if depends is not None:
+            depends = depends.resolve_for_annotation(param.annotation)
             _inherit_local_namespace(parent=call, dependency=depends.dependency)
             dependant.dependencies.append(
                 DependencyParam(
                     param_name=param_name,
                     depends=depends,
-                    dependant=get_dependant(path=path, call=depends.dependency),
+                    dependant=Dependant(call=depends.dependency)
+                    if inspect.isclass(depends.dependency)
+                    else get_dependant(path=path, call=depends.dependency),
                 ),
             )
             continue

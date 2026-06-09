@@ -4,6 +4,7 @@ from typing import Any, Callable, TypeVar, Union
 
 from abc import ABC
 from modmex_lambda.data_classes.api_gateway_proxy_event import APIGatewayProxyEvent, APIGatewayProxyEventV2
+from modmex_lambda.event_handler.dependencies.depends import DependencyResolver
 from modmex_lambda.event_handler.request import Request
 from modmex_lambda.event_handler.response import Response
 
@@ -11,6 +12,7 @@ from modmex_lambda.event_handler.response import Response
 class IApiGatewayResolver(ABC):
     context: dict[str, Any]
     current_event: Union[APIGatewayProxyEvent, APIGatewayProxyEventV2]
+    dependency_resolver: DependencyResolver
     dependency_overrides: dict[Callable[..., Any], Callable[..., Any]]
     _dependency_middleware: Callable[..., Any]
 

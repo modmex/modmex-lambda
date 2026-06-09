@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Callable, get_args, get_origin, get_type_hints
+import inspect
+from typing import Annotated, Any, Callable, Protocol, get_args, get_origin, get_type_hints
 
 from modmex_lambda.event_handler.dependencies.compat import ModelField
 from modmex_lambda.event_handler.dependencies.types import CacheKey
@@ -43,14 +44,82 @@ class DependencyResolutionError(Exception):
     """Raised when a dependency cannot be resolved."""
 
 
+class DependencyResolver(Protocol):
+    """Resolves a dependency token into the value passed to a route handler."""
+
+    def resolve(
+        self,
+        dependency: Callable[..., Any] | type[Any],
+        *,
+        values: dict[str, Any] | None = None,
+        request: Request | None = None,
+    ) -> Any:
+        ...
+
+
+class DefaultDependencyResolver:
+    """Default resolver that calls dependency functions with solved values."""
+
+    def resolve(
+        self,
+        dependency: Callable[..., Any] | type[Any],
+        *,
+        values: dict[str, Any] | None = None,
+        request: Request | None = None,
+    ) -> Any:
+        return dependency(**(values or {}))
+
+
+class InjectorDependencyResolver:
+    """Optional adapter for the ``injector`` package."""
+
+    def __init__(self, injector: Any) -> None:
+        self.injector = injector
+
+    def resolve(
+        self,
+        dependency: Callable[..., Any] | type[Any],
+        *,
+        values: dict[str, Any] | None = None,
+        request: Request | None = None,
+    ) -> Any:
+        kwargs = values or {}
+
+        if hasattr(self.injector, "call_with_injection") and not inspect.isclass(dependency):
+            return self.injector.call_with_injection(dependency, kwargs=kwargs)
+
+        if not kwargs and inspect.isclass(dependency) and hasattr(self.injector, "get"):
+            return self.injector.get(dependency)
+
+        return dependency(**kwargs)
+
+
 class Depends:
-    def __init__(self, dependency: Callable[..., Any], *, use_cache: bool = True) -> None:
-        if not callable(dependency):
+    def __init__(
+        self,
+        dependency: Callable[..., Any] | type[Any] | None = None,
+        *,
+        use_cache: bool = True,
+    ) -> None:
+        if dependency is not None and not callable(dependency):
             raise DependencyResolutionError(
                 f"Depends() requires a callable, got {type(dependency).__name__}: {dependency!r}",
             )
         self.dependency = dependency
         self.use_cache = use_cache
+
+    def resolve_for_annotation(self, annotation: Any) -> Depends:
+        if self.dependency is not None:
+            return self
+
+        if get_origin(annotation) is Annotated:
+            dependency = get_args(annotation)[0]
+            if callable(dependency):
+                return Depends(dependency, use_cache=self.use_cache)
+
+        raise DependencyResolutionError(
+            "Depends() without a callable requires a callable parameter annotation",
+        )
 
 
 class _DependencyNode:
@@ -101,12 +170,17 @@ def build_dependency_tree(func: Callable[..., Any]) -> DependencyTree:
         depends = _get_depends_from_annotation(annotation)
         if depends is None:
             continue
+        depends = depends.resolve_for_annotation(annotation)
 
         dependencies.append(
             _DependencyNode(
                 param_name=param_name,
                 depends=depends,
-                sub_tree=build_dependency_tree(depends.dependency),
+                sub_tree=(
+                    DependencyTree()
+                    if inspect.isclass(depends.dependency)
+                    else build_dependency_tree(depends.dependency)
+                ),
             ),
         )
 
@@ -119,12 +193,14 @@ def solve_dependencies(
     request: Request | None = None,
     dependency_overrides: dict[Callable[..., Any], Callable[..., Any]] | None = None,
     dependency_cache: dict[Callable[..., Any], Any] | None = None,
+    dependency_resolver: DependencyResolver | None = None,
 ) -> dict[str, Any]:
     """Resolve all Depends parameters for a route or lightweight dependency tree."""
     from modmex_lambda.event_handler.request import Request as RequestClass
 
     cache = dependency_cache if dependency_cache is not None else {}
     overrides = dependency_overrides or {}
+    resolver = dependency_resolver or DefaultDependencyResolver()
     values: dict[str, Any] = {}
 
     for dep in dependant.dependencies:
@@ -139,11 +215,12 @@ def solve_dependencies(
             request=request,
             dependency_overrides=overrides,
             dependency_cache=cache,
+            dependency_resolver=resolver,
         )
         sub_values.update(_request_injection_values(dependency, request, RequestClass))
 
         try:
-            solved = dependency(**sub_values)
+            solved = resolver.resolve(dependency, values=sub_values, request=request)
         except Exception as exc:
             dep_name = getattr(dependency, "__name__", repr(dependency))
             raise DependencyResolutionError(
@@ -177,7 +254,10 @@ def _request_injection_values(
 __all__ = [
     "Dependant",
     "DependencyParam",
+    "DependencyResolver",
+    "DefaultDependencyResolver",
     "Depends",
+    "InjectorDependencyResolver",
     "_get_depends_from_annotation",
     "build_dependency_tree",
     "solve_dependencies",

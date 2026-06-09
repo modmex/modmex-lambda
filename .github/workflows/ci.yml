@@ -8,6 +8,7 @@ on:
 
 jobs:
   test:
+    name: CI Tests
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
