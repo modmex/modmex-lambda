@@ -10,7 +10,6 @@ from typing import Any, Deque, FrozenSet, List, Set, Tuple, Union, Literal, Anno
 
 from modmex import BaseModel, ValidationError, create_model
 from modmex_lambda.validation import ModmexValidator
-# from typing_extensions import Annotated, Literal, get_args, get_origin
 
 from modmex_lambda.event_handler.dependencies.types import IncEx, UnionType
     
@@ -229,5 +228,4 @@ def lenient_issubclass(cls: Any, class_or_tuple: Any) -> bool:  # pragma: no cov
     try:
         return isinstance(cls, type) and issubclass(cls, class_or_tuple)
     except TypeError:
-
-        raise  # pragma: no cover
+        return False

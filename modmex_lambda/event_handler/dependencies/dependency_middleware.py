@@ -1,5 +1,4 @@
-from typing import Any, Mapping, MutableMapping, Sequence, Union
-from typing_extensions import get_args, get_origin
+from typing import Any, Mapping, MutableMapping, Sequence, Union, get_args, get_origin
 
 from modmex import BaseModel, FieldInfo
 from modmex_lambda.exceptions import RequestValidationError
