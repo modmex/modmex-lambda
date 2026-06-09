@@ -492,6 +492,7 @@ class RouteEndpointInvoker:
                         dependant=route.dependant,
                         request=app.request,
                         dependency_overrides=app.dependency_overrides or None,
+                        dependency_resolver=app.dependency_resolver,
                     ),
                 )
 

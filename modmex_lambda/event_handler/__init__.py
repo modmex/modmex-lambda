@@ -10,13 +10,16 @@ if TYPE_CHECKING:
         ApiGatewayRestResolver,
         Response,
     )
-    from .dependencies.depends import Depends
+    from .dependencies.depends import DefaultDependencyResolver, DependencyResolver, Depends, InjectorDependencyResolver
 
 _EXPORTS = {
     "ApiGatewayHttpResolver": ("modmex_lambda.event_handler.api_gateway", "ApiGatewayHttpResolver"),
     "ApiGatewayRestResolver": ("modmex_lambda.event_handler.api_gateway", "ApiGatewayRestResolver"),
     "Response": ("modmex_lambda.event_handler.api_gateway", "Response"),
+    "DefaultDependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "DefaultDependencyResolver"),
+    "DependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "DependencyResolver"),
     "Depends": ("modmex_lambda.event_handler.dependencies.depends", "Depends"),
+    "InjectorDependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "InjectorDependencyResolver"),
     "content_types": ("modmex_lambda.event_handler.content_types", None),
 }
 
@@ -24,7 +27,10 @@ __all__ = [
     "ApiGatewayHttpResolver",
     "ApiGatewayRestResolver",
     "Response",
+    "DefaultDependencyResolver",
+    "DependencyResolver",
     "Depends",
+    "InjectorDependencyResolver",
     "content_types",
 ]
 

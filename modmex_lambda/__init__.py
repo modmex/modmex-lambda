@@ -13,7 +13,12 @@ if TYPE_CHECKING:
     )
     from .event_handler.request import Request
     from .event_sources import event_source
-    from .event_handler.dependencies.depends import Depends
+    from .event_handler.dependencies.depends import (
+        DefaultDependencyResolver,
+        DependencyResolver,
+        Depends,
+        InjectorDependencyResolver,
+    )
     from .logging import Logger
     from .parser import event_parser, parse
     from .validation import ModmexValidator, ValidationError
@@ -26,7 +31,10 @@ _EXPORTS = {
     "parse": ("modmex_lambda.parser", "parse"),
     "event_parser": ("modmex_lambda.parser", "event_parser"),
     "event_source": ("modmex_lambda.event_sources", "event_source"),
+    "DefaultDependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "DefaultDependencyResolver"),
+    "DependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "DependencyResolver"),
     "Depends": ("modmex_lambda.event_handler.dependencies.depends", "Depends"),
+    "InjectorDependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "InjectorDependencyResolver"),
     "Logger": ("modmex_lambda.logging", "Logger"),
     "ModmexValidator": ("modmex_lambda.validation", "ModmexValidator"),
     "ValidationError": ("modmex_lambda.validation", "ValidationError"),
@@ -40,7 +48,10 @@ __all__ = [
     "parse",
     "event_parser",
     "event_source",
+    "DefaultDependencyResolver",
+    "DependencyResolver",
     "Depends",
+    "InjectorDependencyResolver",
     "Logger",
     "ModmexValidator",
     "ValidationError",

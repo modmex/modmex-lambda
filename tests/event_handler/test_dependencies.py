@@ -39,6 +39,7 @@ from modmex_lambda.event_handler.dependencies.depends import (
     DependencyParam,
     DependencyResolutionError,
     Depends,
+    InjectorDependencyResolver,
     build_dependency_tree,
     solve_dependencies,
 )
@@ -120,6 +121,15 @@ def endpoint_with_broken_dependency(value: Annotated[str, Depends(broken_depende
     return None
 
 
+class ComplexService:
+    def __init__(self, dependency: object) -> None:
+        self.dependency = dependency
+
+
+def endpoint_with_annotation_dependency(service: Annotated[ComplexService, Depends()]) -> None:
+    return None
+
+
 def _field(
     name: str,
     annotation: Any,
@@ -149,6 +159,15 @@ def test_depends_rejects_non_callable_and_extracts_annotated_dependency() -> Non
     assert compat._normalize_errors([{"loc": ("x",), "type": "missing"}]) == [{"loc": ("x",), "type": "missing"}]
 
 
+def test_depends_without_callable_uses_parameter_annotation_as_dependency_token() -> None:
+    tree = build_dependency_tree(endpoint_with_annotation_dependency)
+
+    assert len(tree.dependencies) == 1
+    assert tree.dependencies[0].param_name == "service"
+    assert tree.dependencies[0].depends.dependency is ComplexService
+    assert tree.dependencies[0].dependant.dependencies == []
+
+
 def test_solve_dependencies_supports_cache_overrides_request_and_errors() -> None:
     CALLS["token"] = 0
     event = APIGatewayProxyEventV2(http_v2_event("GET", "/items", headers={"x-tenant-id": "mx"}))
@@ -168,6 +187,34 @@ def test_solve_dependencies_supports_cache_overrides_request_and_errors() -> Non
 
     with pytest.raises(DependencyResolutionError, match="Failed to resolve dependency 'broken_dependency'"):
         solve_dependencies(dependant=build_dependency_tree(endpoint_with_broken_dependency))
+
+
+def test_solve_dependencies_accepts_custom_dependency_resolver() -> None:
+    class Resolver:
+        def resolve(self, dependency, *, values=None, request=None):
+            assert dependency is ComplexService
+            assert values == {}
+            return ComplexService(dependency="container")
+
+    values = solve_dependencies(
+        dependant=build_dependency_tree(endpoint_with_annotation_dependency),
+        dependency_resolver=Resolver(),
+    )
+
+    assert values["service"].dependency == "container"
+
+
+def test_injector_dependency_resolver_uses_injector_get_for_class_tokens() -> None:
+    service = ComplexService(dependency="injector")
+
+    class FakeInjector:
+        def get(self, dependency):
+            assert dependency is ComplexService
+            return service
+
+    resolver = InjectorDependencyResolver(FakeInjector())
+
+    assert resolver.resolve(ComplexService) is service
 
 
 def test_solve_dependencies_honors_use_cache_false() -> None:

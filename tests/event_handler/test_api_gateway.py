@@ -29,6 +29,35 @@ class CreateUserRequest:
         self.age = age
 
 
+class Settings:
+    def __init__(self, tenant_id: str) -> None:
+        self.tenant_id = tenant_id
+
+
+class UserRepository:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def get_user(self, user_id: int) -> dict[str, str | int]:
+        return {"id": user_id, "tenant_id": self.settings.tenant_id}
+
+
+class UserService:
+    def __init__(self, repository: UserRepository) -> None:
+        self.repository = repository
+
+    def get_user(self, user_id: int) -> dict[str, str | int]:
+        return self.repository.get_user(user_id)
+
+
+class AuditService:
+    def __init__(self, tenant_id: str) -> None:
+        self.tenant_id = tenant_id
+
+    def record(self, user_id: int) -> dict[str, str | int]:
+        return {"user_id": user_id, "tenant_id": self.tenant_id}
+
+
 def test_public_api_requires_explicit_api_gateway_resolver() -> None:
     assert modmex_lambda.ApiGatewayHttpResolver is ApiGatewayHttpResolver
     assert modmex_lambda.ApiGatewayRestResolver is ApiGatewayRestResolver
@@ -435,6 +464,97 @@ def test_dependency_injection_without_cache() -> None:
     response = app.resolve(http_v2_event("GET", "/di-nocache"), object())
 
     assert response_body(response) == {"a": 1, "b": 2}
+
+
+def test_dependency_injection_uses_custom_dependency_resolver_for_annotation_token() -> None:
+    class UserService:
+        def __init__(self, tenant_id: str) -> None:
+            self.tenant_id = tenant_id
+
+    class Resolver:
+        def resolve(self, dependency, *, values=None, request=None):
+            assert dependency is UserService
+            assert values == {}
+            assert request.headers["x-tenant-id"] == "mx"
+            return UserService(tenant_id="mx")
+
+    app = ApiGatewayHttpResolver(dependency_resolver=Resolver())
+
+    @app.get("/di-resolver")
+    def handler(service: Annotated[UserService, Depends()]):
+        return {"tenant_id": service.tenant_id}
+
+    response = app.resolve(http_v2_event("GET", "/di-resolver", headers={"x-tenant-id": "mx"}), object())
+
+    assert response_body(response) == {"tenant_id": "mx"}
+
+
+def test_http_resolver_supports_real_injector_class_token_dependency() -> None:
+    pytest.importorskip("injector")
+    from injector import Injector, Module, inject, provider, singleton
+    from modmex_lambda import InjectorDependencyResolver
+
+    class MyModule(Module):
+        @singleton
+        @provider
+        def provide_settings(self) -> Settings:
+            return Settings(tenant_id="mx")
+
+        @singleton
+        @provider
+        @inject
+        def provide_repository(self, settings: Settings) -> UserRepository:
+            return UserRepository(settings)
+
+        @singleton
+        @provider
+        @inject
+        def provide_service(self, repository: UserRepository) -> UserService:
+            return UserService(repository)
+
+    container = Injector([MyModule()])
+    app = ApiGatewayHttpResolver(dependency_resolver=InjectorDependencyResolver(container))
+
+    @app.get("/injector/users/<user_id>")
+    def handler(
+        user_id: Annotated[int, Path()],
+        service: Annotated[UserService, Depends()],
+    ):
+        return service.get_user(user_id)
+
+    response = app.resolve(http_v2_event("GET", "/injector/users/42"), object())
+
+    assert response_body(response) == {"id": 42, "tenant_id": "mx"}
+
+
+def test_rest_resolver_supports_real_injector_factory_dependency() -> None:
+    pytest.importorskip("injector")
+    from injector import Injector, Module, inject, provider, singleton
+    from modmex_lambda import InjectorDependencyResolver
+
+    class MyModule(Module):
+        @singleton
+        @provider
+        def provide_settings(self) -> Settings:
+            return Settings(tenant_id="mx")
+
+    @inject
+    def get_audit_service(settings: Settings) -> AuditService:
+        return AuditService(settings.tenant_id)
+
+    container = Injector([MyModule()])
+    app = ApiGatewayRestResolver(dependency_resolver=InjectorDependencyResolver(container))
+
+    @app.get("/injector/audit/<user_id>")
+    def handler(
+        user_id: Annotated[int, Path()],
+        audit: Annotated[AuditService, Depends(get_audit_service)],
+    ):
+        return audit.record(user_id)
+
+    response = app.resolve(rest_event("GET", "/injector/audit/7"), object())
+
+    assert response_body(response) == {"user_id": 7, "tenant_id": "mx"}
 
 
 def test_validation_error_maps_to_400() -> None:

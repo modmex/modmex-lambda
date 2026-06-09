@@ -13,11 +13,17 @@ logging with a small dependency footprint.
 pip install modmex-lambda
 ```
 
-For local development:
+
+To use the optional `injector` integration:
 
 ```bash
-poetry install --extras dev
-poetry run pytest -q
+pip install "modmex-lambda[injector]"
+```
+
+With Poetry:
+
+```bash
+poetry add "modmex-lambda[injector]"
 ```
 
 ## API Gateway Resolvers
@@ -221,6 +227,69 @@ def get_user(
     repository: Annotated[UserRepository, Depends(get_user_repository)],
 ):
     return repository.get_user(user_id)
+```
+
+For constructor-heavy services, install the optional `injector` extra and pass
+an `InjectorDependencyResolver` to the app. `Depends()` without a callable uses
+the parameter annotation as the dependency token.
+
+```python
+from typing import Annotated
+
+from injector import Injector, Module, inject, provider, singleton
+from modmex_lambda import ApiGatewayHttpResolver, Depends, InjectorDependencyResolver
+from modmex_lambda.event_handler.params import Path
+
+
+class Settings:
+    def __init__(self, tenant_id: str):
+        self.tenant_id = tenant_id
+
+
+class UserRepository:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+
+    def get_user(self, user_id: int) -> dict:
+        return {"id": user_id, "tenant_id": self.settings.tenant_id}
+
+
+class UserService:
+    def __init__(self, repository: UserRepository):
+        self.repository = repository
+
+    def get_user(self, user_id: int) -> dict:
+        return self.repository.get_user(user_id)
+
+
+class AppModule(Module):
+    @singleton
+    @provider
+    def provide_settings(self) -> Settings:
+        return Settings(tenant_id="mx")
+
+    @singleton
+    @provider
+    @inject
+    def provide_repository(self, settings: Settings) -> UserRepository:
+        return UserRepository(settings)
+
+    @singleton
+    @provider
+    @inject
+    def provide_service(self, repository: UserRepository) -> UserService:
+        return UserService(repository)
+
+
+container = Injector([AppModule()])
+app = ApiGatewayHttpResolver(dependency_resolver=InjectorDependencyResolver(container))
+
+@app.get("/users/<user_id>")
+def get_user(
+    user_id: Annotated[int, Path()],
+    service: Annotated[UserService, Depends()],
+):
+    return service.get_user(user_id)
 ```
 
 Disable dependency caching when a dependency must run every time:

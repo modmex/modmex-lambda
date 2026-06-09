@@ -27,6 +27,7 @@ from modmex_lambda.data_classes.api_gateway_proxy_event import APIGatewayProxyEv
 from modmex_lambda.shared.types import AnyCallableT
 from modmex_lambda.event_handler.types import IApiGatewayResolver
 from modmex_lambda.event_handler.dependencies.dependency_middleware import DependencyMiddleware
+from modmex_lambda.event_handler.dependencies.depends import DefaultDependencyResolver, DependencyResolver
 from modmex_lambda.event_handler.middlewares import NextMiddleware
 from modmex_lambda.event_handler.cors import CORSConfig
 from modmex_lambda.shared.json_encoder import JSONEncoder
@@ -104,6 +105,7 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
         strip_prefixes: list[str | Pattern] | None = None,
         json_body_deserializer: Callable[[str], dict] | None = None,
         logger: Any | None = None,
+        dependency_resolver: DependencyResolver | None = None,
     ) -> None:
         self._cors = cors
         self._cors_enabled = cors is not None
@@ -118,6 +120,7 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
         self._router_middlewares: list[Middleware] = []
 
         self._logger = logger
+        self.dependency_resolver = dependency_resolver or DefaultDependencyResolver()
         self.dependency_overrides: dict[Callable[..., Any], Callable[..., Any]] = {}
         self.current_event = None
         self.current_context = None
