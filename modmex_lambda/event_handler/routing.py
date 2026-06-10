@@ -190,8 +190,50 @@ class HasRoutes(ABC):
             cache_control=cache_control,
         )
 
+    def options(
+        self,
+        rule: str,
+        description: str | None = None,
+        status_code: int = DEFAULT_STATUS_CODE,
+        middlewares: list[AnyCallableT] | None = None,
+        cors: bool | None = None,
+        compress: bool = False,
+        cache_control: str | None = None,
+    ) -> Callable[[AnyCallableT], AnyCallableT]:
+        return self.route(
+            rule=rule,
+            method="OPTIONS",
+            description=description,
+            status_code=status_code,
+            middlewares=middlewares,
+            cors=cors,
+            compress=compress,
+            cache_control=cache_control,
+        )
 
-class IRouter(ABC):
+    def any(
+        self,
+        rule: str,
+        description: str | None = None,
+        status_code: int = DEFAULT_STATUS_CODE,
+        middlewares: list[AnyCallableT] | None = None,
+        cors: bool | None = None,
+        compress: bool = False,
+        cache_control: str | None = None,
+    ) -> Callable[[AnyCallableT], AnyCallableT]:
+        return self.route(
+            rule=rule,
+            method="ANY",
+            description=description,
+            status_code=status_code,
+            middlewares=middlewares,
+            cors=cors,
+            compress=compress,
+            cache_control=cache_control,
+        )
+
+
+class IRouter(HasRoutes, ABC):
     _routes: list[IRoute]
 
     @abstractmethod

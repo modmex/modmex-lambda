@@ -281,13 +281,32 @@ def test_include_router_and_strip_prefixes() -> None:
     router = Router()
     app = ApiGatewayHttpResolver(strip_prefixes=["/prod"])
 
-    @router.route("/health", method="GET")
+    @router.get("/health")
     def health():
         return {"ok": True}
 
     app.include_router(router)
 
     response = app.resolve(http_v2_event("GET", "/prod/health"), object())
+
+    assert response_body(response) == {"ok": True}
+
+
+def test_include_nested_routers() -> None:
+    grandchild = Router()
+    child = Router()
+    parent = Router()
+    app = ApiGatewayHttpResolver()
+
+    @grandchild.get("/health")
+    def health():
+        return {"ok": True}
+
+    child.include_router(grandchild, prefix="/v1")
+    parent.include_router(child, prefix="/api")
+    app.include_router(parent)
+
+    response = app.resolve(http_v2_event("GET", "/api/v1/health"), object())
 
     assert response_body(response) == {"ok": True}
 

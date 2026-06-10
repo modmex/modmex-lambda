@@ -45,7 +45,9 @@ def ping():
     return {"message": "pong"}
 
 
-handler = app.handler
+def handler(event, context):
+    return app.resolve(event, context)
+
 ```
 
 The internal base resolver is intentionally not exported from the package root;
@@ -68,6 +70,25 @@ def create_user():
 
 Supported route decorators include `get`, `post`, `put`, `patch`, `delete`,
 `options`, and `any`.
+
+You can also declare routes on a standalone router and include it in the
+resolver:
+
+```python
+from modmex_lambda import ApiGatewayHttpResolver
+from modmex_lambda.routing import Router
+
+app = ApiGatewayHttpResolver()
+router = Router()
+
+
+@router.get("/health")
+def health():
+    return {"ok": True}
+
+
+app.include_router(router)
+```
 
 Routers can also strip deployment prefixes:
 
@@ -146,6 +167,38 @@ Route return values are converted to API Gateway proxy responses:
 - `(body, status_code)` sets the response status.
 - `Response` gives full control over status, headers, cookies, and content type.
 
+Use plain return values for simple JSON endpoints:
+
+```python
+from modmex import BaseModel
+
+
+class User(BaseModel):
+    id: int
+    name: str
+
+
+@app.get("/users/<user_id>")
+def get_user(user_id: int):
+    user = User(id=user_id, name="Ada")
+    return user.model_dump()
+
+
+@app.post("/users", status_code=201)
+def create_user():
+    user = User(id=42, name="Ada")
+    return user.model_dump()
+
+
+@app.delete("/users/<user_id>")
+def delete_user(user_id: int):
+    return {"deleted": user_id}, 202
+```
+
+Use `Response` when the endpoint needs explicit response metadata. If you are
+returning the same `User` model, pass `user.model_dump_json()` as the body and
+set `content_type="application/json"`:
+
 ```python
 from modmex_lambda import Response
 from modmex_lambda.shared.cookies import Cookie
@@ -153,13 +206,63 @@ from modmex_lambda.shared.cookies import Cookie
 
 @app.get("/session")
 def session():
+    user = User(id=42, name="Ada")
     return Response(
         status_code=200,
-        body={"ok": True},
-        cookies=[Cookie("seen", "true", secure=True)],
+        content_type="application/json",
+        body=user.model_dump_json(),
+        headers={"x-app": "users"},
+        cookies=[
+            Cookie(
+                "session",
+                "abc",
+                path="/",
+                http_only=True,
+                secure=True,
+                max_age=3600,
+            ),
+        ],
     )
 ```
 
+`Response` accepts:
+
+- `status_code`: the HTTP status code returned to API Gateway.
+- `body`: a JSON-serializable object, `str`, `bytes`, or `None`.
+- `content_type`: sets `Content-Type` unless the header is already present.
+- `headers`: a mapping of header names to a string or list of strings.
+- `cookies`: a list of `Cookie` objects.
+- `compress`: overrides route-level gzip compression for that response.
+
+When `Content-Type` starts with `application/json`, non-string bodies are
+serialized with the app serializer. Binary bodies are base64 encoded.
+
+For `modmex` models, prefer `model_dump()` when returning plain JSON objects.
+Use `model_dump_json()` when you already need to build a `Response` and want to
+send the serialized JSON string directly with `content_type="application/json"`.
+
+```python
+@app.get("/avatar/<user_id>")
+def avatar(user_id: int):
+    image_bytes = load_avatar(user_id)
+    return Response(
+        status_code=200,
+        content_type="image/png",
+        body=image_bytes,
+        headers={"Cache-Control": "max-age=3600"},
+    )
+```
+
+Route options can add response behavior without constructing `Response` in every
+handler:
+
+```python
+@app.get("/report", cache_control="max-age=60", compress=True)
+def report():
+    return {"items": build_report()}
+```
+
+Compression is applied only when the request includes `Accept-Encoding: gzip`.
 REST API responses use `multiValueHeaders`; HTTP API responses use the v2
 `headers` and `cookies` shape.
 
@@ -392,8 +495,69 @@ def lambda_handler(event: APIGatewayHttpEvent, context):
 
 ## Validation
 
-Modmex is the default validation and coercion engine. Pydantic is not required
-for normal operation.
+Modmex is the default validation and coercion engine. It is used for path,
+query, header, cookie, and body parameters declared with `Annotated`, and it is
+paired with the default JSON serializer for common values like enums, dates,
+datetimes, decimals, and dataclasses.
+
+```python
+from datetime import date
+from decimal import Decimal
+from enum import Enum
+from typing import Annotated
+
+from modmex import BaseModel
+from modmex_lambda import ApiGatewayHttpResolver
+from modmex_lambda.event_handler.params import Body, Path, Query
+
+app = ApiGatewayHttpResolver()
+
+
+class Plan(str, Enum):
+    FREE = "free"
+    PRO = "pro"
+
+
+class CreateAccount(BaseModel):
+    name: str
+    plan: Plan = Plan.FREE
+    trial_ends_on: date | None = None
+
+
+class Account(BaseModel):
+    id: int
+    name: str
+    plan: Plan
+    balance: Decimal
+
+
+@app.post("/accounts", status_code=201)
+def create_account(payload: Annotated[CreateAccount, Body()]):
+    account = Account(
+        id=42,
+        name=payload.name,
+        plan=payload.plan,
+        balance=Decimal("0.00"),
+    )
+    # Return model_dump() when you want the response body to be a JSON object.
+    return account.model_dump()
+
+
+@app.get("/accounts/<account_id>")
+def get_account(
+    account_id: Annotated[int, Path()],
+    include_usage: Annotated[bool, Query()] = False,
+):
+    return {
+        "id": account_id,
+        "include_usage": include_usage,
+        "created_on": date(2026, 1, 1),
+    }
+```
+
+If validation fails, the resolver returns `400` with a compact validation error
+payload. For domain-specific errors, register an exception handler and return a
+`Response` with the shape your API expects.
 
 ## Logging
 
@@ -411,18 +575,6 @@ def lambda_handler(event, context):
 The logger emits structured JSON and can extract Lambda request IDs and API
 Gateway correlation IDs.
 
-## Benchmarks
-
-The benchmark suite lives in `.benchmark/api_gateway_benchmark.py`.
-
-It covers cold imports, app setup, route registration, API Gateway v1/v2
-invocation, `event_parser`, `event_source`, and logger hot paths.
-
-```bash
-poetry run python .benchmark/api_gateway_benchmark.py
-```
-
-More details are in `.benchmark/README.md`.
 
 ## Limitations
 
