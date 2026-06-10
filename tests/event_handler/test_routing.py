@@ -44,7 +44,7 @@ def test_router_matches_any_routes_for_static_paths() -> None:
     def handler():
         return {"ok": True}
 
-    router.route("/proxy", method="ANY")(handler)
+    router.any("/proxy")(handler)
 
     route, params, allowed_methods = router.match("PATCH", "/proxy")
 
@@ -69,3 +69,23 @@ def test_router_include_router_preserves_route_metadata() -> None:
     assert route.handler is handler
     assert route.cache_control == "max-age=60"
     assert route.compress is True
+
+
+def test_nested_routers_accumulate_prefixes() -> None:
+    grandchild = Router()
+    child = Router()
+    parent = Router()
+
+    @grandchild.get("/health")
+    def health():
+        return {"ok": True}
+
+    child.include_router(grandchild, prefix="/v1")
+    parent.include_router(child, prefix="/api")
+
+    route, params, allowed_methods = parent.match("GET", "/api/v1/health")
+
+    assert route is not None
+    assert route.handler is health
+    assert params == {}
+    assert allowed_methods == set()
