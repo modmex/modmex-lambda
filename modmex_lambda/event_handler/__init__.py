@@ -6,26 +6,27 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from . import content_types
     from .api_gateway import (
-        ApiGatewayHttpResolver,
-        ApiGatewayRestResolver,
+        APIGatewayHttpResolver,
+        APIGatewayRestResolver,
         Response,
     )
-    from .dependencies.depends import DefaultDependencyResolver, DependencyResolver, Depends, InjectorDependencyResolver
+    from modmex_lambda.dependencies import DefaultDependencyResolver, DependencyResolver, InjectorDependencyResolver
+    from .dependencies.depends import Depends
 
 _EXPORTS = {
-    "ApiGatewayHttpResolver": ("modmex_lambda.event_handler.api_gateway", "ApiGatewayHttpResolver"),
-    "ApiGatewayRestResolver": ("modmex_lambda.event_handler.api_gateway", "ApiGatewayRestResolver"),
+    "APIGatewayHttpResolver": ("modmex_lambda.event_handler.api_gateway", "APIGatewayHttpResolver"),
+    "APIGatewayRestResolver": ("modmex_lambda.event_handler.api_gateway", "APIGatewayRestResolver"),
     "Response": ("modmex_lambda.event_handler.api_gateway", "Response"),
-    "DefaultDependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "DefaultDependencyResolver"),
-    "DependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "DependencyResolver"),
+    "DefaultDependencyResolver": ("modmex_lambda.dependencies", "DefaultDependencyResolver"),
+    "DependencyResolver": ("modmex_lambda.dependencies", "DependencyResolver"),
     "Depends": ("modmex_lambda.event_handler.dependencies.depends", "Depends"),
-    "InjectorDependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "InjectorDependencyResolver"),
+    "InjectorDependencyResolver": ("modmex_lambda.dependencies", "InjectorDependencyResolver"),
     "content_types": ("modmex_lambda.event_handler.content_types", None),
 }
 
 __all__ = [
-    "ApiGatewayHttpResolver",
-    "ApiGatewayRestResolver",
+    "APIGatewayHttpResolver",
+    "APIGatewayRestResolver",
     "Response",
     "DefaultDependencyResolver",
     "DependencyResolver",

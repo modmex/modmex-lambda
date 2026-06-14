@@ -1,11 +1,17 @@
 # modmex-lambda
 
-Ultra-lightweight AWS Lambda utilities for API Gateway-first workloads.
+AWS Lambda utilities for API Gateway and event-driven workloads.
+
+[![CI](https://img.shields.io/github/actions/workflow/status/modmex/modmex/ci.yml?branch=main&logo=github&label=CI)](https://github.com/modmex/modmex/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/modmex/modmex-lambda?label=coverage)](https://codecov.io/gh/modmex/modmex-lambda)
+[![PyPI](https://img.shields.io/pypi/v/modmex-lambda.svg)](https://pypi.org/project/modmex-lambda/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/modmex-lambda.svg)](https://pypi.org/project/modmex-lambda/)
+[![License](https://img.shields.io/github/license/modmex/modmex-lambda.svg)](https://github.com/modmex/modmex-lambda/blob/main/LICENSE)
 
 `modmex-lambda` is a Lambda utility layer, not an ASGI framework. It focuses on
 API Gateway proxy events, fast routing, request binding, response serialization,
-middleware, dependency injection, event source wrappers, parsing, and structured
-logging with a small dependency footprint.
+middleware, dependency injection, stream sources, parsing, and structured
+logging.
 
 ## Install
 
@@ -14,16 +20,16 @@ pip install modmex-lambda
 ```
 
 
-To use the optional `injector` integration:
+`injector` support is included for REST and stream dependency resolution:
 
 ```bash
-pip install "modmex-lambda[injector]"
+pip install modmex-lambda
 ```
 
 With Poetry:
 
 ```bash
-poetry add "modmex-lambda[injector]"
+poetry add modmex-lambda
 ```
 
 ## API Gateway Resolvers
@@ -31,13 +37,13 @@ poetry add "modmex-lambda[injector]"
 Choose the resolver that matches the API Gateway payload version used by your
 Lambda integration:
 
-- `ApiGatewayRestResolver` for REST API payload v1.
-- `ApiGatewayHttpResolver` for HTTP API payload v2 and Lambda Function URLs.
+- `APIGatewayRestResolver` for REST API payload v1.
+- `APIGatewayHttpResolver` for HTTP API payload v2 and Lambda Function URLs.
 
 ```python
-from modmex_lambda import ApiGatewayHttpResolver
+from modmex_lambda import APIGatewayHttpResolver
 
-app = ApiGatewayHttpResolver()
+app = APIGatewayHttpResolver()
 
 
 @app.get("/ping")
@@ -75,10 +81,10 @@ You can also declare routes on a standalone router and include it in the
 resolver:
 
 ```python
-from modmex_lambda import ApiGatewayHttpResolver
+from modmex_lambda import APIGatewayHttpResolver
 from modmex_lambda.routing import Router
 
-app = ApiGatewayHttpResolver()
+app = APIGatewayHttpResolver()
 router = Router()
 
 
@@ -93,7 +99,7 @@ app.include_router(router)
 Routers can also strip deployment prefixes:
 
 ```python
-app = ApiGatewayHttpResolver(strip_prefixes=["/prod"])
+app = APIGatewayHttpResolver(strip_prefixes=["/prod"])
 ```
 
 ## Request Binding
@@ -110,10 +116,10 @@ Use `typing.Annotated` with the public parameter markers:
 from typing import Annotated
 
 from modmex import BaseModel
-from modmex_lambda import ApiGatewayHttpResolver, Request
+from modmex_lambda import APIGatewayHttpResolver, Request
 from modmex_lambda.event_handler.params import Body, Header, Path, Query
 
-app = ApiGatewayHttpResolver()
+app = APIGatewayHttpResolver()
 
 
 class CreateUserRequest(BaseModel):
@@ -278,7 +284,7 @@ from modmex_lambda.event_handler.middlewares import NextMiddleware
 
 
 @app.middleware
-def require_auth(app: ApiGatewayHttpResolver, next_middleware: NextMiddleware) -> Response:
+def require_auth(app: APIGatewayHttpResolver, next_middleware: NextMiddleware) -> Response:
     if app.current_event.headers.get("x-auth") != "ok":
         return Response(status_code=401, body={"message": "Unauthorized"})
     return next_middleware(app)
@@ -332,15 +338,15 @@ def get_user(
     return repository.get_user(user_id)
 ```
 
-For constructor-heavy services, install the optional `injector` extra and pass
-an `InjectorDependencyResolver` to the app. `Depends()` without a callable uses
-the parameter annotation as the dependency token.
+For constructor-heavy services, pass an `InjectorDependencyResolver` to the app.
+`Depends()` without a callable uses the parameter annotation as the dependency
+token.
 
 ```python
 from typing import Annotated
 
 from injector import Injector, Module, inject, provider, singleton
-from modmex_lambda import ApiGatewayHttpResolver, Depends, InjectorDependencyResolver
+from modmex_lambda import APIGatewayHttpResolver, Depends, InjectorDependencyResolver
 from modmex_lambda.event_handler.params import Path
 
 
@@ -385,7 +391,8 @@ class AppModule(Module):
 
 
 container = Injector([AppModule()])
-app = ApiGatewayHttpResolver(dependency_resolver=InjectorDependencyResolver(container))
+dependency_resolver = InjectorDependencyResolver(container)
+app = APIGatewayHttpResolver(dependency_resolver=dependency_resolver)
 
 @app.get("/users/<user_id>")
 def get_user(
@@ -448,10 +455,10 @@ Pass `CORSConfig` to the resolver to add CORS headers and automatic preflight
 behavior.
 
 ```python
-from modmex_lambda import ApiGatewayHttpResolver
+from modmex_lambda import APIGatewayHttpResolver
 from modmex_lambda.event_handler.cors import CORSConfig
 
-app = ApiGatewayHttpResolver(
+app = APIGatewayHttpResolver(
     cors=CORSConfig(
         allow_origin="https://app.example",
         allow_headers=["X-Tenant-Id"],
@@ -507,10 +514,10 @@ from enum import Enum
 from typing import Annotated
 
 from modmex import BaseModel
-from modmex_lambda import ApiGatewayHttpResolver
+from modmex_lambda import APIGatewayHttpResolver
 from modmex_lambda.event_handler.params import Body, Path, Query
 
-app = ApiGatewayHttpResolver()
+app = APIGatewayHttpResolver()
 
 
 class Plan(str, Enum):
@@ -564,20 +571,514 @@ payload. For domain-specific errors, register an exception handler and return a
 ```python
 from modmex_lambda import Logger
 
-logger = Logger(service="users")
+logger = Logger()
 
 
 def lambda_handler(event, context):
+    logger.set_context(context=context, event=event)
     logger.append_keys(tenant_id="mx")
     logger.info("request received")
 ```
 
-The logger emits structured JSON and can extract Lambda request IDs and API
-Gateway correlation IDs.
+The logger emits structured JSON, reads `LOG_LEVEL`, uses `SERVICE_NAME` or
+`AWS_LAMBDA_FUNCTION_NAME` when no service is passed, and can extract Lambda
+request IDs and API Gateway correlation IDs.
 
+
+## Stream Handlers
+
+Event-driven Lambda handlers live under `modmex_lambda.stream`. Use them for
+listeners and triggers backed by SQS, SNS, Kinesis, DynamoDB Streams, S3, and
+other common AWS event sources.
+
+```python
+from modmex_lambda.stream.flavors.cdc import CdcRule, ChangeDataCapture
+from modmex_lambda.stream.rules_registry import RulesRegistry
+from modmex_lambda.stream.sources import dynamodb_source
+from modmex_lambda.stream.utils.contracts import DynamoDBEvent, Uow
+
+
+def to_user_created_event(uow: Uow[DynamoDBEvent]) -> DynamoDBEvent:
+    user = uow["event"]["raw"]["new"]
+    return {
+        "id": f"user-created:{user['id']}",
+        "type": "user-created",
+        "partition_key": user["id"],
+        "user": user,
+    }
+
+
+rule: CdcRule[DynamoDBEvent] = {
+    "id": "publish-user-created",
+    "event_type": "USER-created",
+    "to_event": to_user_created_event,
+}
+
+
+registry = RulesRegistry().registry(
+    ChangeDataCapture[DynamoDBEvent](rule)
+)
+
+
+@dynamodb_source(registry)
+def handler(event, context):
+    return {"statusCode": 200}
+```
+
+Streams include source normalizers, rule registries, filters, flavors, AWS
+connectors, and operators for common event-driven patterns.
+
+## Stream Core Concepts
+
+`modmex_lambda.stream` is source-first: a source parses a raw AWS Lambda event
+into units of work, binds a registry, and runs one or more flavor pipelines.
+
+```text
+AWS event source -> Source -> UOWs -> RulesRegistry -> Flavor(s)
+```
+
+Use it when one Lambda batch should run several independent reactions while
+keeping the rest of the batch moving if one record fails.
+
+Common reactions include:
+
+- publish domain events to EventBridge;
+- store and correlate events;
+- update DynamoDB materialized views;
+- write messages to SNS or SQS;
+- write objects to S3;
+- execute domain tasks.
+
+### Sources
+
+A source answers “where did this Lambda event come from?” Built-in sources
+normalize DynamoDB Streams, Kinesis, S3, SNS, and SQS events.
+
+```python
+from modmex_lambda.stream.sources import (
+    DynamoDBSource,
+    KinesisSource,
+    S3Source,
+    SnsSource,
+    SqsSource,
+    dynamodb_source,
+    kinesis_source,
+    s3_source,
+    sns_source,
+    sqs_source,
+)
+```
+
+Class and decorator helpers accept the same runtime options:
+
+```python
+handler = KinesisSource(
+    registry,
+    concurrency=False,
+    on_next=on_next,
+    on_error=on_error,
+    on_completed=on_completed,
+    dependency_resolver=dependency_resolver,
+).handle
+```
+
+`DynamoDBSource` also accepts parser options when table attributes use custom
+names:
+
+```python
+DynamoDBSource(
+    registry,
+    parser_options={
+        "pk_fn": "pk",
+        "sk_fn": "sk",
+        "discriminator_fn": "discriminator",
+        "event_type_prefix": "ENTITY",
+    },
+)
+```
+
+### Registry And Rules
+
+A registry is the explicit list of flavor instances a source should run:
+
+```python
+from modmex_lambda.stream.flavors.cdc import ChangeDataCapture
+from modmex_lambda.stream.flavors.materialize import Materialize
+from modmex_lambda.stream.rules_registry import RulesRegistry
+
+registry = (
+    RulesRegistry()
+    .registry(ChangeDataCapture({
+        "id": "thing-cdc",
+        "event_type": "THING-created",
+        "to_event": to_event,
+    }))
+    .registry(Materialize({
+        "id": "thing-materialized",
+        "event_type": "thing-created",
+        "to_update_request": to_update_request,
+    }))
+)
+```
+
+All built-in flavor rules share:
+
+- `id`: unique pipeline id.
+- `event_type`: string, list of strings, or callable matcher.
+- `filters`: optional content filters that receive `(uow, rule)`.
+
+### Unit Of Work
+
+Every source creates serializable UOW dictionaries:
+
+```python
+{
+    "pipeline": "thing-cdc",
+    "record": {...},  # original AWS record
+    "event": {
+        "id": "event-id",
+        "type": "thing-created",
+        "timestamp": 1548967022000,
+        "partition_key": "thing-1",
+        "tags": {...},
+    },
+}
+```
+
+DynamoDB stream events also include `event["raw"]` with the mapped `new` and
+`old` images.
+
+### Runtime Callbacks
+
+Sources expose lifecycle callbacks that are useful in tests, metrics, and
+custom observability:
+
+```python
+completed = []
+errors = []
+items = []
+
+handler = KinesisSource(
+    registry,
+    concurrency=False,
+    on_next=lambda pipeline_id, uow: items.append((pipeline_id, uow)),
+    on_error=lambda pipeline_id, error: errors.append((pipeline_id, error)),
+    on_completed=lambda pipeline_id: completed.append(pipeline_id),
+).handle
+```
+
+Use `concurrency=False` in tests when deterministic order matters.
+
+### Publisher Options
+
+Flavors that publish to EventBridge use a shared publisher. Configure it with
+`publisher_options`:
+
+```python
+ChangeDataCapture(
+    {
+        "id": "thing-cdc",
+        "event_type": "THING-created",
+        "to_event": to_event,
+    },
+    publisher_options={
+        "bus_name": "domain-events",
+        "source": "things.write-model",
+        "batch_size": 10,
+    },
+)
+```
+
+If `bus_name` is omitted, the publisher uses `BUS_NAME`. If `source` is omitted,
+it uses `BUS_SRC` or `custom`.
+
+### Shared Dependency Injection
+
+REST handlers and stream handlers can share the same `injector.Injector`. Add
+`AwsConnectorsModule` when stream flavors should resolve the built-in AWS
+connectors through DI.
+
+```python
+from injector import Injector
+from modmex_lambda import AwsConnectorsModule, InjectorDependencyResolver
+
+container = Injector([AwsConnectorsModule(), AppModule()])
+dependency_resolver = InjectorDependencyResolver(container)
+
+stream_handler = KinesisSource(
+    registry,
+    dependency_resolver=dependency_resolver,
+).handle
+```
+
+## Event-Driven Patterns
+
+Use stream flavors as named building blocks for common AWS Lambda event
+workflows. Each flavor listens to normalized units of work (`uow`), filters by
+rule, and then performs one focused job.
+
+### Change Data Capture
+
+Use `ChangeDataCapture` when a DynamoDB Stream represents changes in your
+system of record and you want to publish domain events from those changes.
+
+Typical flow:
+
+```text
+DynamoDB table -> DynamoDB Stream -> ChangeDataCapture -> EventBridge
+```
+
+For example, an inserted `USER` item can become a `user-created` event. This is
+useful when your write model is DynamoDB and other services should react without
+calling the writer directly.
+
+```python
+from modmex_lambda.stream.flavors.cdc import ChangeDataCapture
+from modmex_lambda.stream.rules_registry import RulesRegistry
+from modmex_lambda.stream.sources import DynamoDBSource
+
+
+def to_thing_created(uow):
+    thing = uow["event"]["raw"]["new"]
+    return {
+        "id": thing["id"],
+        "type": "thing-created",
+        "timestamp": uow["event"]["timestamp"],
+        "partition_key": thing["id"],
+        "thing": {
+            "id": thing["id"],
+            "name": thing["name"],
+        },
+    }
+
+
+registry = RulesRegistry().registry(
+    ChangeDataCapture(
+        {
+            "id": "thing-cdc",
+            "event_type": "THING-created",
+            "to_event": to_thing_created,
+        },
+        publisher_options={
+            "bus_name": "domain-events",
+            "source": "things.write-model",
+        },
+    )
+)
+
+handler = DynamoDBSource(registry, concurrency=False).handle
+```
+
+### Materialize
+
+Use `Materialize` when a service listens to domain events and updates a local
+read model or projection.
+
+Typical flow:
+
+```text
+EventBridge/Kinesis/SQS -> Materialize -> DynamoDB read model
+```
+
+For example, an `order-paid` event can update a customer summary table. You
+materialize so queries stay local and fast, and each service owns the model it
+needs instead of querying another service synchronously.
+
+```python
+from modmex_lambda.stream.flavors.materialize import Materialize
+from modmex_lambda.stream.rules_registry import RulesRegistry
+from modmex_lambda.stream.sources import KinesisSource
+from modmex_lambda.stream.utils.dynamodb import update_expression
+
+
+def to_thing_view_update(uow):
+    thing = uow["event"]["thing"]
+    return {
+        "Key": {
+            "pk": thing["id"],
+            "sk": "THING",
+        },
+        **update_expression({
+            "name": thing["name"],
+            "timestamp": uow["event"]["timestamp"],
+        }),
+    }
+
+
+registry = RulesRegistry().registry(
+    Materialize({
+        "id": "materialize-thing",
+        "event_type": "thing-created",
+        "to_update_request": to_thing_view_update,
+    })
+)
+
+handler = KinesisSource(registry, concurrency=False).handle
+```
+
+Use `split_on` and `split_target_field` when one event updates several records,
+for example one `order-created` event materializing each order item.
+
+### Control And Orchestration
+
+Use the control pattern when one business process depends on several events
+happening over time. It is useful for sagas, process managers, and long-running
+coordination without a central synchronous transaction.
+
+The usual pieces are:
+
+- `Collect`: stores incoming events by a correlation key.
+- `Correlate`: writes secondary correlation records when one event should be
+  findable by another key.
+- `Evaluate`: checks collected/correlated events and emits higher-order events
+  when a condition is satisfied.
+
+Typical flow:
+
+```text
+events -> Collect -> DynamoDB control table -> Evaluate -> EventBridge
+                         ^
+                         |
+                    Correlate
+```
+
+For example, an order saga might collect `order-created`,
+`payment-authorized`, and `inventory-reserved`. Once `Evaluate` sees the
+required events, it emits `order-ready-to-ship`. Downstream services can keep
+reacting through EventBridge, SNS, SQS, or Kinesis.
+
+First Lambda: listen to the event stream and collect the events by order id.
+
+```python
+from modmex_lambda.stream.flavors.collect import Collect
+from modmex_lambda.stream.rules_registry import RulesRegistry
+from modmex_lambda.stream.sources import KinesisSource
+
+
+collect_registry = RulesRegistry().registry(
+    Collect({
+        "id": "collect-order-events",
+        "event_type": ["order-created", "payment-authorized"],
+        "correlation_key": "order.id",
+        "include_raw": False,
+        "expire": "order-correlation-expired",
+    })
+)
+
+handler = KinesisSource(collect_registry, concurrency=False).handle
+```
+
+Second Lambda: consume the DynamoDB stream from the collection table.
+`Correlate` writes correlation records and `Evaluate` checks whether the
+workflow is ready.
+
+```python
+from modmex_lambda.stream.flavors.correlate import Correlate
+from modmex_lambda.stream.flavors.evaluate import Evaluate
+from modmex_lambda.stream.rules_registry import RulesRegistry
+from modmex_lambda.stream.sources import DynamoDBSource
+
+
+def order_is_ready(uow):
+    types = [event["type"] for event in uow["correlated"]]
+    return "order-created" in types and "payment-authorized" in types
+
+
+control_registry = (
+    RulesRegistry()
+    .registry(Correlate({
+        "id": "correlate-order",
+        "event_type": ["order-created", "payment-authorized"],
+        "correlation_key": "order.id",
+        "correlation_key_suffix": "ready",
+    }))
+    .registry(Evaluate(
+        {
+            "id": "order-ready",
+            "event_type": ["order-created", "payment-authorized"],
+            "correlation_key_suffix": "ready",
+            "expression": order_is_ready,
+            "emit": "order-ready",
+        },
+        publisher_options={
+            "bus_name": "domain-events",
+            "source": "orders.control",
+        },
+    ))
+)
+
+handler = DynamoDBSource(control_registry, concurrency=False).handle
+```
+
+### Event Hub
+
+EventBridge is a natural hub for domain events. Flavors like
+`ChangeDataCapture`, `Evaluate`, and the publisher operator can put events on
+the bus; consumers can then use `kinesis_source`, `sqs_source`, `sns_source`, or
+`dynamodb_source` depending on the integration shape.
+
+Use SNS when the target contract is topic fan-out and SQS when the target needs
+durable queue semantics. Use EventBridge when events are part of the domain
+language and should be routed by event type, source, account, or bus.
+
+### Other Flavors
+
+- `Task`: runs arbitrary business logic for matching events and can optionally
+  emit a follow-up event.
+- `Job`: uses a DynamoDB job record to drive paginated work and emit or update
+  per-item results.
+- `Expired`: consumes DynamoDB TTL `REMOVE` records and publishes expiration
+  events.
+- `S3`: writes objects to S3.
+- `Sns`: publishes messages to SNS.
+- `Update`: queries, gets, and updates DynamoDB records.
+
+`Task` callbacks receive the current `Task` flavor instance. Use `task.rule`
+for rule configuration and `task.resolve(...)` for dependencies bound by the
+source or registry:
+
+```python
+from pydash import get
+
+from modmex_lambda.stream.flavors.task import Task
+from modmex_lambda.stream.rules_registry import RulesRegistry
+from modmex_lambda.stream.sources import KinesisSource
+
+
+class ResumeAnalyzerService:
+    def analyze(self, application):
+        return {
+            "application_id": application["id"],
+            "confidence": 0.87,
+        }
+
+
+def analyze_resume(uow, task):
+    analyzer = task.resolve(ResumeAnalyzerService)
+    return analyzer.analyze(get(uow, "event.application"))
+
+
+registry = RulesRegistry().registry(
+    Task({
+        "id": "analyze-resume",
+        "event_type": "resume-analysis-requested",
+        "execute": analyze_resume,
+        "emit": lambda uow, task, template: {
+            **template,
+            "type": "resume-analyzed",
+            "application": {
+                **get(uow, "event.application"),
+                "analysis": uow["result"],
+                "pipeline": task.rule["id"],
+            },
+        },
+    })
+)
+
+handler = KinesisSource(registry, concurrency=False).handle
+```
 
 ## Limitations
 
-- Event source scope is intentionally focused on API Gateway and Cognito.
 - OpenAPI/Swagger generation is not implemented.
-- Async resolver pipelines are not implemented yet.
+- Async API Gateway resolver pipelines are not implemented yet.

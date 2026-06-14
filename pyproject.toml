@@ -4,27 +4,47 @@ build-backend = "hatchling.build"
 
 [project]
 name = "modmex-lambda"
-version = "0.3.0"
+version = "0.4.0"
 description = "Ultra-lightweight AWS Lambda utilities for API Gateway routing and event handling."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<4.0"
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 license = { text = "MIT" }
 authors = [{ name = "Modmex" }]
 dependencies = [
-    "modmex (>=1.1.10,<2.0.0)"
+    "modmex (>=1.1.10,<2.0.0)",
+    "boto3>=1.24.66,<2.0.0",
+    "injector>=0.24.0,<1.0.0",
+    "pydash>=5.1.2,<9.0.0",
+    "reactivex>=4.0.4,<5.0.0",
+    "typing-extensions>=4.5.0,<5.0.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
 injector = ["injector>=0.24.0,<1.0.0"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
 
+[tool.coverage.run]
+omit = [
+    "modmex_lambda/connectors/i*.py",
+    "modmex_lambda/event_handler/types.py",
+    "modmex_lambda/stream/flavors/iflavor.py",
+    "modmex_lambda/stream/operators/ioperator.py",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["modmex_lambda"]
 
 [tool.poetry.group.dev.dependencies]
+expects = ">=0.9.0,<1.0.0"
+pytest = ">=8.0"
 pytest-cov = "^7.1.0"
-

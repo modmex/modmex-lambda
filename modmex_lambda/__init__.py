@@ -7,51 +7,60 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .event_handler import (
-        ApiGatewayHttpResolver,
-        ApiGatewayRestResolver,
+        APIGatewayHttpResolver,
+        APIGatewayRestResolver,
         Response,
     )
     from .event_handler.request import Request
     from .event_sources import event_source
-    from .event_handler.dependencies.depends import (
+    from .connectors import AwsConnectorsModule
+    from .dependencies import (
         DefaultDependencyResolver,
         DependencyResolver,
-        Depends,
         InjectorDependencyResolver,
+        create_dependency_resolver,
+        default_dependency_resolver,
     )
+    from .event_handler.dependencies.depends import Depends
     from .logging import Logger
     from .parser import event_parser, parse
     from .validation import ModmexValidator, ValidationError
 
 _EXPORTS = {
-    "ApiGatewayHttpResolver": ("modmex_lambda.event_handler", "ApiGatewayHttpResolver"),
-    "ApiGatewayRestResolver": ("modmex_lambda.event_handler", "ApiGatewayRestResolver"),
+    "APIGatewayHttpResolver": ("modmex_lambda.event_handler", "APIGatewayHttpResolver"),
+    "APIGatewayRestResolver": ("modmex_lambda.event_handler", "APIGatewayRestResolver"),
     "Request": ("modmex_lambda.event_handler.request", "Request"),
     "Response": ("modmex_lambda.event_handler", "Response"),
     "parse": ("modmex_lambda.parser", "parse"),
     "event_parser": ("modmex_lambda.parser", "event_parser"),
     "event_source": ("modmex_lambda.event_sources", "event_source"),
-    "DefaultDependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "DefaultDependencyResolver"),
-    "DependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "DependencyResolver"),
+    "AwsConnectorsModule": ("modmex_lambda.connectors", "AwsConnectorsModule"),
+    "DefaultDependencyResolver": ("modmex_lambda.dependencies", "DefaultDependencyResolver"),
+    "DependencyResolver": ("modmex_lambda.dependencies", "DependencyResolver"),
     "Depends": ("modmex_lambda.event_handler.dependencies.depends", "Depends"),
-    "InjectorDependencyResolver": ("modmex_lambda.event_handler.dependencies.depends", "InjectorDependencyResolver"),
+    "InjectorDependencyResolver": ("modmex_lambda.dependencies", "InjectorDependencyResolver"),
+    "create_dependency_resolver": ("modmex_lambda.dependencies", "create_dependency_resolver"),
+    "default_dependency_resolver": ("modmex_lambda.dependencies", "default_dependency_resolver"),
     "Logger": ("modmex_lambda.logging", "Logger"),
     "ModmexValidator": ("modmex_lambda.validation", "ModmexValidator"),
     "ValidationError": ("modmex_lambda.validation", "ValidationError"),
 }
 
 __all__ = [
-    "ApiGatewayHttpResolver",
-    "ApiGatewayRestResolver",
+    "APIGatewayHttpResolver",
+    "APIGatewayRestResolver",
     "Request",
     "Response",
     "parse",
     "event_parser",
     "event_source",
+    "AwsConnectorsModule",
     "DefaultDependencyResolver",
     "DependencyResolver",
     "Depends",
     "InjectorDependencyResolver",
+    "create_dependency_resolver",
+    "default_dependency_resolver",
     "Logger",
     "ModmexValidator",
     "ValidationError",

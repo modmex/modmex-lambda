@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import inspect
-from typing import Annotated, Any, Callable, Protocol, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Callable, get_args, get_origin, get_type_hints
 
+import inspect
+
+from modmex_lambda.dependencies import DefaultDependencyResolver, DependencyResolver, InjectorDependencyResolver
 from modmex_lambda.event_handler.dependencies.compat import ModelField
 from modmex_lambda.event_handler.dependencies.types import CacheKey
 from modmex_lambda.event_handler.request import Request
@@ -42,56 +44,6 @@ class Dependant:
 
 class DependencyResolutionError(Exception):
     """Raised when a dependency cannot be resolved."""
-
-
-class DependencyResolver(Protocol):
-    """Resolves a dependency token into the value passed to a route handler."""
-
-    def resolve(
-        self,
-        dependency: Callable[..., Any] | type[Any],
-        *,
-        values: dict[str, Any] | None = None,
-        request: Request | None = None,
-    ) -> Any:
-        ...
-
-
-class DefaultDependencyResolver:
-    """Default resolver that calls dependency functions with solved values."""
-
-    def resolve(
-        self,
-        dependency: Callable[..., Any] | type[Any],
-        *,
-        values: dict[str, Any] | None = None,
-        request: Request | None = None,
-    ) -> Any:
-        return dependency(**(values or {}))
-
-
-class InjectorDependencyResolver:
-    """Optional adapter for the ``injector`` package."""
-
-    def __init__(self, injector: Any) -> None:
-        self.injector = injector
-
-    def resolve(
-        self,
-        dependency: Callable[..., Any] | type[Any],
-        *,
-        values: dict[str, Any] | None = None,
-        request: Request | None = None,
-    ) -> Any:
-        kwargs = values or {}
-
-        if hasattr(self.injector, "call_with_injection") and not inspect.isclass(dependency):
-            return self.injector.call_with_injection(dependency, kwargs=kwargs)
-
-        if not kwargs and inspect.isclass(dependency) and hasattr(self.injector, "get"):
-            return self.injector.get(dependency)
-
-        return dependency(**kwargs)
 
 
 class Depends:
@@ -220,7 +172,7 @@ def solve_dependencies(
         sub_values.update(_request_injection_values(dependency, request, RequestClass))
 
         try:
-            solved = resolver.resolve(dependency, values=sub_values, request=request)
+            solved = resolver.resolve(dependency, values=sub_values)
         except Exception as exc:
             dep_name = getattr(dependency, "__name__", repr(dependency))
             raise DependencyResolutionError(

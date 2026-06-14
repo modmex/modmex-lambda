@@ -191,7 +191,7 @@ def test_solve_dependencies_supports_cache_overrides_request_and_errors() -> Non
 
 def test_solve_dependencies_accepts_custom_dependency_resolver() -> None:
     class Resolver:
-        def resolve(self, dependency, *, values=None, request=None):
+        def resolve(self, dependency, *, values=None):
             assert dependency is ComplexService
             assert values == {}
             return ComplexService(dependency="container")
