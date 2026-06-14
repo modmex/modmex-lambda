@@ -3,25 +3,37 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import traceback
 from datetime import datetime, timezone
 from typing import Any, Callable, TextIO
 
 
+_LEVELS = {
+    "DEBUG": 10,
+    "INFO": 20,
+    "WARNING": 30,
+    "ERROR": 40,
+    "CRITICAL": 50,
+}
+
+
 class Logger:
     def __init__(
         self,
         *,
-        service: str,
+        service: str | None = None,
         stream: TextIO | None = None,
         json_serializer: Callable[[dict[str, Any]], str] | None = None,
         correlation_id_header: str = "x-correlation-id",
+        level: str | int | None = None,
     ) -> None:
-        self._service = service
+        self._service = service or os.getenv("SERVICE_NAME") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") or "service"
         self._stream = stream or sys.stdout
         self._serialize = json_serializer or (lambda payload: json.dumps(payload, separators=(",", ":"), default=str))
         self._correlation_id_header = correlation_id_header.lower()
+        self._level = self._resolve_level(level)
         self._persistent_keys: dict[str, Any] = {}
         self._context: object | None = None
         self._event: dict[str, Any] | None = None
@@ -36,27 +48,36 @@ class Logger:
     def clear_state(self) -> None:
         self._persistent_keys.clear()
 
-    def debug(self, message: str, **kwargs: Any) -> None:
-        self._log("DEBUG", message, **kwargs)
+    def set_level(self, level: str | int) -> None:
+        self._level = self._resolve_level(level)
 
-    def info(self, message: str, **kwargs: Any) -> None:
-        self._log("INFO", message, **kwargs)
+    def is_enabled_for(self, level: str | int) -> bool:
+        return self._resolve_level(level) >= self._level
 
-    def warning(self, message: str, **kwargs: Any) -> None:
-        self._log("WARNING", message, **kwargs)
+    def debug(self, message: Any, *args: Any, **kwargs: Any) -> None:
+        self._log("DEBUG", message, *args, **kwargs)
 
-    def error(self, message: str, *, exc_info: bool = False, **kwargs: Any) -> None:
-        self._log("ERROR", message, exc_info=exc_info, **kwargs)
+    def info(self, message: Any, *args: Any, **kwargs: Any) -> None:
+        self._log("INFO", message, *args, **kwargs)
 
-    def critical(self, message: str, *, exc_info: bool = False, **kwargs: Any) -> None:
-        self._log("CRITICAL", message, exc_info=exc_info, **kwargs)
+    def warning(self, message: Any, *args: Any, **kwargs: Any) -> None:
+        self._log("WARNING", message, *args, **kwargs)
 
-    def _log(self, level: str, message: str, *, exc_info: bool = False, **kwargs: Any) -> None:
+    def error(self, message: Any, *args: Any, exc_info: bool = False, **kwargs: Any) -> None:
+        self._log("ERROR", message, *args, exc_info=exc_info, **kwargs)
+
+    def critical(self, message: Any, *args: Any, exc_info: bool = False, **kwargs: Any) -> None:
+        self._log("CRITICAL", message, *args, exc_info=exc_info, **kwargs)
+
+    def _log(self, level: str, message: Any, *args: Any, exc_info: bool = False, **kwargs: Any) -> None:
+        if not self.is_enabled_for(level):
+            return
+
         record: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": level,
             "service": self._service,
-            "message": message,
+            "message": self._format_message(message, args),
         }
         record.update(self._persistent_keys)
 
@@ -74,6 +95,19 @@ class Logger:
             record["exception"] = traceback.format_exc()
 
         self._stream.write(self._serialize(record) + "\n")
+
+    def _resolve_level(self, level: str | int | None) -> int:
+        if isinstance(level, int):
+            return level
+        level_name = (level or os.getenv("LOG_LEVEL") or "INFO").upper()
+        return _LEVELS.get(level_name, _LEVELS["INFO"])
+
+    def _format_message(self, message: Any, args: tuple[Any, ...]) -> Any:
+        if not args:
+            return message
+        if isinstance(message, str):
+            return message % args
+        return message
 
     def _extract_request_id(self) -> str | None:
         if self._context is None:

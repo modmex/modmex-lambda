@@ -27,7 +27,7 @@ from modmex_lambda.data_classes.api_gateway_proxy_event import APIGatewayProxyEv
 from modmex_lambda.shared.types import AnyCallableT
 from modmex_lambda.event_handler.types import IApiGatewayResolver
 from modmex_lambda.event_handler.dependencies.dependency_middleware import DependencyMiddleware
-from modmex_lambda.event_handler.dependencies.depends import DefaultDependencyResolver, DependencyResolver
+from modmex_lambda.dependencies import DefaultDependencyResolver, DependencyResolver
 from modmex_lambda.event_handler.middlewares import NextMiddleware
 from modmex_lambda.event_handler.cors import CORSConfig
 from modmex_lambda.shared.json_encoder import JSONEncoder
@@ -248,8 +248,8 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
         event_type = getattr(self, "_event_type", None)
         if event_type is None:
             raise TypeError(
-                "ApiGatewayResolver is a base resolver. Use ApiGatewayRestResolver for API Gateway REST API "
-                "payload v1 or ApiGatewayHttpResolver for API Gateway HTTP API payload v2.",
+                "ApiGatewayResolver is a base resolver. Use APIGatewayRestResolver for API Gateway REST API "
+                "payload v1 or APIGatewayHttpResolver for API Gateway HTTP API payload v2.",
             )
 
         event_class = _PROXY_EVENT_MAP.get(event_type)
@@ -313,21 +313,21 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
 
         return path.startswith(f"{prefix}/")
 
-class ApiGatewayRestResolver(ApiGatewayResolver):
+class APIGatewayRestResolver(ApiGatewayResolver):
     """Resolver for API Gateway REST API payload v1."""
 
     _event_type = ProxyEventType.APIGatewayProxyEvent
 
 
-class ApiGatewayHttpResolver(ApiGatewayResolver):
+class APIGatewayHttpResolver(ApiGatewayResolver):
     """Resolver for API Gateway HTTP API payload v2."""
 
     _event_type = ProxyEventType.APIGatewayProxyEventV2
 
 
 __all__ = [
-    "ApiGatewayHttpResolver",
-    "ApiGatewayRestResolver",
+    "APIGatewayHttpResolver",
+    "APIGatewayRestResolver",
     "Request",
     "Response",
     "Route",

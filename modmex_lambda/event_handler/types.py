@@ -4,7 +4,7 @@ from typing import Any, Callable, TypeVar, Union
 
 from abc import ABC
 from modmex_lambda.data_classes.api_gateway_proxy_event import APIGatewayProxyEvent, APIGatewayProxyEventV2
-from modmex_lambda.event_handler.dependencies.depends import DependencyResolver
+from modmex_lambda.dependencies import DependencyResolver
 from modmex_lambda.event_handler.request import Request
 from modmex_lambda.event_handler.response import Response
 

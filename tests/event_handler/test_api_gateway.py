@@ -11,7 +11,7 @@ from typing import Annotated
 import pytest
 
 import modmex_lambda
-from modmex_lambda import ApiGatewayHttpResolver, ApiGatewayRestResolver, Depends
+from modmex_lambda import APIGatewayHttpResolver, APIGatewayRestResolver, Depends
 from modmex_lambda.event_handler import content_types
 from modmex_lambda.event_handler.api_gateway import ApiGatewayResolver, Request, Response
 from modmex_lambda.event_handler.cors import CORSConfig
@@ -59,8 +59,8 @@ class AuditService:
 
 
 def test_public_api_requires_explicit_api_gateway_resolver() -> None:
-    assert modmex_lambda.ApiGatewayHttpResolver is ApiGatewayHttpResolver
-    assert modmex_lambda.ApiGatewayRestResolver is ApiGatewayRestResolver
+    assert modmex_lambda.APIGatewayHttpResolver is APIGatewayHttpResolver
+    assert modmex_lambda.APIGatewayRestResolver is APIGatewayRestResolver
     assert "ApiGatewayResolver" not in dir(modmex_lambda)
     assert content_types.APPLICATION_JSON == "application/json"
 
@@ -68,7 +68,7 @@ def test_public_api_requires_explicit_api_gateway_resolver() -> None:
 def test_base_resolver_direct_use_fails_with_actionable_error() -> None:
     app = ApiGatewayResolver()
 
-    with pytest.raises(TypeError, match="Use ApiGatewayRestResolver"):
+    with pytest.raises(TypeError, match="Use APIGatewayRestResolver"):
         app.resolve(http_v2_event("GET", "/ping"), object())
 
 
@@ -84,7 +84,7 @@ def test_resolver_rejects_unknown_event_type() -> None:
 
 
 def test_http_resolver_binds_path_query_header_and_request_facade() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.get("/users/<user_id>")
     def get_user(
@@ -130,7 +130,7 @@ def test_http_resolver_binds_path_query_header_and_request_facade() -> None:
 
 
 def test_request_facade_requires_route_and_is_cached_inside_middleware() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
     seen: list[bool] = []
 
     with pytest.raises(RuntimeError):
@@ -152,7 +152,7 @@ def test_request_facade_requires_route_and_is_cached_inside_middleware() -> None
 
 
 def test_injected_request_path_parameters_only_include_path_values() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.put("/users/<user_id>")
     def update_user(
@@ -168,7 +168,7 @@ def test_injected_request_path_parameters_only_include_path_values() -> None:
 
 
 def test_rest_resolver_uses_rest_proxy_response_shape() -> None:
-    app = ApiGatewayRestResolver()
+    app = APIGatewayRestResolver()
 
     @app.get("/ping")
     def ping():
@@ -191,7 +191,7 @@ def test_rest_resolver_uses_rest_proxy_response_shape() -> None:
 
 
 def test_http_resolver_serializes_cookies_in_http_api_shape() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.get("/session")
     def session():
@@ -210,7 +210,7 @@ def test_http_resolver_serializes_cookies_in_http_api_shape() -> None:
 
 
 def test_static_dynamic_any_404_and_405_routing() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.get("/users/<user_id>")
     def get_user(user_id: Annotated[int, Path()]):
@@ -235,7 +235,7 @@ def test_static_dynamic_any_404_and_405_routing() -> None:
 
 
 def test_rest_resolver_serializes_not_found_with_rest_proxy_shape() -> None:
-    app = ApiGatewayRestResolver()
+    app = APIGatewayRestResolver()
 
     response = app.resolve(rest_event("GET", "/missing"), object())
 
@@ -246,7 +246,7 @@ def test_rest_resolver_serializes_not_found_with_rest_proxy_shape() -> None:
 
 
 def test_custom_routing_fallback_exception_handlers() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.get("/users")
     def users():
@@ -279,7 +279,7 @@ def test_custom_routing_fallback_exception_handlers() -> None:
 
 def test_include_router_and_strip_prefixes() -> None:
     router = Router()
-    app = ApiGatewayHttpResolver(strip_prefixes=["/prod"])
+    app = APIGatewayHttpResolver(strip_prefixes=["/prod"])
 
     @router.get("/health")
     def health():
@@ -296,7 +296,7 @@ def test_include_nested_routers() -> None:
     grandchild = Router()
     child = Router()
     parent = Router()
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @grandchild.get("/health")
     def health():
@@ -312,8 +312,8 @@ def test_include_nested_routers() -> None:
 
 
 def test_strip_prefix_exact_match_and_regex_prefix() -> None:
-    app = ApiGatewayHttpResolver(strip_prefixes=["/prod"])
-    regex_app = ApiGatewayHttpResolver(strip_prefixes=[re.compile(r"^/v[0-9]+")])
+    app = APIGatewayHttpResolver(strip_prefixes=["/prod"])
+    regex_app = APIGatewayHttpResolver(strip_prefixes=[re.compile(r"^/v[0-9]+")])
 
     @app.get("/")
     def root():
@@ -328,7 +328,7 @@ def test_strip_prefix_exact_match_and_regex_prefix() -> None:
 
 
 def test_global_and_route_middlewares_wrap_success_404_and_405() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
     calls: list[str] = []
 
     def global_header(resolver: ApiGatewayResolver, next_middleware: NextMiddleware) -> Response:
@@ -366,7 +366,7 @@ def test_global_and_route_middlewares_wrap_success_404_and_405() -> None:
 
 
 def test_middleware_decorator_order_and_short_circuit() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
     order: list[str] = []
 
     @app.middleware
@@ -402,7 +402,7 @@ def test_middleware_decorator_order_and_short_circuit() -> None:
 
 
 def test_dependency_injection_cache_overrides_and_request_dependency() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
     counters = defaultdict(int)
 
     class UserRepository:
@@ -466,7 +466,7 @@ def test_dependency_injection_cache_overrides_and_request_dependency() -> None:
 
 
 def test_dependency_injection_without_cache() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
     calls = {"value": 0}
 
     def counter_factory() -> int:
@@ -491,13 +491,12 @@ def test_dependency_injection_uses_custom_dependency_resolver_for_annotation_tok
             self.tenant_id = tenant_id
 
     class Resolver:
-        def resolve(self, dependency, *, values=None, request=None):
+        def resolve(self, dependency, *, values=None):
             assert dependency is UserService
             assert values == {}
-            assert request.headers["x-tenant-id"] == "mx"
             return UserService(tenant_id="mx")
 
-    app = ApiGatewayHttpResolver(dependency_resolver=Resolver())
+    app = APIGatewayHttpResolver(dependency_resolver=Resolver())
 
     @app.get("/di-resolver")
     def handler(service: Annotated[UserService, Depends()]):
@@ -532,7 +531,7 @@ def test_http_resolver_supports_real_injector_class_token_dependency() -> None:
             return UserService(repository)
 
     container = Injector([MyModule()])
-    app = ApiGatewayHttpResolver(dependency_resolver=InjectorDependencyResolver(container))
+    app = APIGatewayHttpResolver(dependency_resolver=InjectorDependencyResolver(container))
 
     @app.get("/injector/users/<user_id>")
     def handler(
@@ -562,7 +561,7 @@ def test_rest_resolver_supports_real_injector_factory_dependency() -> None:
         return AuditService(settings.tenant_id)
 
     container = Injector([MyModule()])
-    app = ApiGatewayRestResolver(dependency_resolver=InjectorDependencyResolver(container))
+    app = APIGatewayRestResolver(dependency_resolver=InjectorDependencyResolver(container))
 
     @app.get("/injector/audit/<user_id>")
     def handler(
@@ -577,7 +576,7 @@ def test_rest_resolver_supports_real_injector_factory_dependency() -> None:
 
 
 def test_validation_error_maps_to_400() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.get("/users/<user_id>")
     def get_user(user_id: Annotated[int, Path()]):
@@ -592,7 +591,7 @@ def test_validation_error_maps_to_400() -> None:
 
 
 def test_custom_and_builtin_exception_handlers() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     class DomainError(Exception):
         pass
@@ -619,7 +618,7 @@ def test_custom_and_builtin_exception_handlers() -> None:
 
 
 def test_default_error_responses_for_explicit_route_errors() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.get("/not-found")
     def not_found():
@@ -634,7 +633,7 @@ def test_default_error_responses_for_explicit_route_errors() -> None:
 
 
 def test_exception_handler_failure_falls_back_to_default_error_response() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.exception_handler(ValueError)
     def broken_handler(_exc: Exception):
@@ -650,7 +649,7 @@ def test_exception_handler_failure_falls_back_to_default_error_response() -> Non
 
 
 def test_most_specific_exception_handler_wins() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.exception_handler(Exception)
     def on_any(_exc: Exception):
@@ -671,7 +670,7 @@ def test_most_specific_exception_handler_wins() -> None:
 
 
 def test_cors_preflight_and_route_headers() -> None:
-    app = ApiGatewayHttpResolver(cors=CORSConfig(allow_origin="https://app.example"))
+    app = APIGatewayHttpResolver(cors=CORSConfig(allow_origin="https://app.example"))
 
     @app.get("/users")
     def users():
@@ -692,7 +691,7 @@ def test_cors_preflight_and_route_headers() -> None:
 
 
 def test_cors_preflight_for_missing_route_uses_registered_cors_methods() -> None:
-    app = ApiGatewayHttpResolver(cors=CORSConfig(allow_origin="https://app.example"))
+    app = APIGatewayHttpResolver(cors=CORSConfig(allow_origin="https://app.example"))
 
     @app.get("/users")
     def users():
@@ -705,7 +704,7 @@ def test_cors_preflight_for_missing_route_uses_registered_cors_methods() -> None
 
 
 def test_cache_control_and_gzip_compression() -> None:
-    app = ApiGatewayHttpResolver()
+    app = APIGatewayHttpResolver()
 
     @app.get("/compressed", cache_control="max-age=60", compress=True)
     def compressed():
