@@ -21,6 +21,8 @@ def run_import_probe(code: str) -> dict[str, bool]:
             "injector",
             "pydash",
             "reactivex",
+            "opentelemetry",
+            "opentelemetry.trace",
             "modmex_lambda.data_classes.cognito_user_pool_event",
             "modmex_lambda.stream.sources.dynamodb",
             "modmex_lambda.stream.sources.kinesis",
@@ -46,6 +48,8 @@ def test_root_import_does_not_load_heavy_optional_modules() -> None:
     assert loaded["injector"] is False
     assert loaded["pydash"] is False
     assert loaded["reactivex"] is False
+    assert loaded["opentelemetry"] is False
+    assert loaded["opentelemetry.trace"] is False
 
 
 def test_api_gateway_resolver_import_does_not_load_stream_or_aws_di_modules() -> None:
@@ -55,6 +59,8 @@ def test_api_gateway_resolver_import_does_not_load_stream_or_aws_di_modules() ->
     assert loaded["injector"] is False
     assert loaded["pydash"] is False
     assert loaded["reactivex"] is False
+    assert loaded["opentelemetry"] is False
+    assert loaded["opentelemetry.trace"] is False
 
 
 def test_data_class_reexport_only_loads_requested_family() -> None:

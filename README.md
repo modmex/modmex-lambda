@@ -584,6 +584,75 @@ The logger emits structured JSON, reads `LOG_LEVEL`, uses `SERVICE_NAME` or
 `AWS_LAMBDA_FUNCTION_NAME` when no service is passed, and can extract Lambda
 request IDs and API Gateway correlation IDs.
 
+## Tracing
+
+Tracing is optional and lazy. The core package does not require
+`opentelemetry-api`, does not initialize an SDK/exporter, and does not import
+OpenTelemetry during `import modmex_lambda`.
+
+`Tracer` uses OpenTelemetry when an OpenTelemetry runtime is available. For
+Lambda, the recommended runtime is the AWS Distro for OpenTelemetry (ADOT)
+Lambda layer.
+
+The example below uses Serverless Framework. If you use another IaC tool, the
+same pieces are required: enable Lambda tracing, attach the ADOT Python layer
+for the AWS region where the function runs, and configure the OpenTelemetry
+environment variables.
+
+```yaml
+provider:
+  name: aws
+  runtime: python3.12
+  region: mx-central-1
+  tracing:
+    lambda: true
+
+functions:
+  api:
+    handler: app.lambda_handler
+    layers:
+      - arn:aws:lambda:mx-central-1:610118373846:layer:AWSOpenTelemetryDistroPython:13
+    environment:
+      AWS_LAMBDA_EXEC_WRAPPER: /opt/otel-instrument
+      OTEL_SERVICE_NAME: ${self:service}
+```
+
+Do not bundle `opentelemetry-*` packages in your function when using the ADOT
+layer. The layer provides the OpenTelemetry runtime; bundling a different
+version can conflict with the layer. Public ADOT layer ARNs are regional, so
+use the ARN that matches your configured AWS region.
+
+```python
+from modmex_lambda import Tracer
+
+tracer = Tracer(service="orders")
+
+
+@tracer.capture_lambda_handler
+def lambda_handler(event, context):
+    return handle(event)
+
+
+@tracer.capture_method(name="handle_order")
+def handle(event):
+    tracer.set_attribute("tenant_id", event.get("tenant_id"))
+    return {"ok": True}
+```
+
+If OpenTelemetry is not installed or configured, the tracer is a no-op. Use an
+external OpenTelemetry setup, such as an ADOT Lambda layer or your own SDK
+configuration, when spans should be exported.
+
+When decorating route handlers, put the route decorator above
+`capture_method`, so the router registers the traced function:
+
+```python
+@app.post("/todos")
+@tracer.capture_method(name="create_todo")
+def create_todo(todo: Annotated[Todo, Body()]) -> dict:
+    return todo.model_dump()
+```
+
 
 ## Stream Handlers
 

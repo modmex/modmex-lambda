@@ -16,6 +16,7 @@ __all__ = [
     "create_dependency_resolver",
     "default_dependency_resolver",
     "Logger",
+    "Tracer",
     "ModmexValidator",
     "ValidationError",
 ]
@@ -38,6 +39,7 @@ def __getattr__(name):
         "create_dependency_resolver": ("modmex_lambda.dependencies", "create_dependency_resolver"),
         "default_dependency_resolver": ("modmex_lambda.dependencies", "default_dependency_resolver"),
         "Logger": ("modmex_lambda.logging", "Logger"),
+        "Tracer": ("modmex_lambda.tracing", "Tracer"),
         "ModmexValidator": ("modmex_lambda.validation", "ModmexValidator"),
         "ValidationError": ("modmex_lambda.validation", "ValidationError"),
     }.get(name)
