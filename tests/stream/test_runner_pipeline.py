@@ -9,7 +9,6 @@ from modmex_lambda.stream.rules_registry import RulesRegistry
 from modmex_lambda.stream.runner import run
 from modmex_lambda.stream.utils.faults import faulty
 from modmex_lambda.stream.utils.operators import try_filter, try_map
-from modmex_lambda.stream.utils.opt import DEFAULT_OPTIONS
 from modmex_lambda.stream.utils.print import print_end, print_start
 
 
@@ -57,7 +56,6 @@ def test_runner_executes_registered_pipelines():
             {'event': {'id': 3, 'number': 3}},
         ],
         RulesRegistry().registry(*pipelines),
-        opt=DEFAULT_OPTIONS,
         concurrency=False,
         on_next=lambda _, uow: collected.append(uow),
         on_error=lambda _, error: errors.append(error),
@@ -96,7 +94,6 @@ def test_runner_with_concurrency_and_flat_map():
             Pipeline('test1', operator(1)),
             Pipeline('test2', operator(10)),
         ),
-        opt=DEFAULT_OPTIONS,
         on_next=lambda _, uow: collected.append(uow),
         on_completed=lambda pipeline: completed.append(pipeline),
     )
@@ -137,7 +134,6 @@ def test_runner_with_concurrency_flat_map_and_failed_item():
             Pipeline('test1', operator(1)),
             Pipeline('test2', operator(10)),
         ),
-        opt=DEFAULT_OPTIONS,
         on_next=lambda _, uow: collected.append(uow),
         on_error=lambda _, error: errors.append(error),
         on_completed=lambda pipeline: completed.append(pipeline),
@@ -160,10 +156,7 @@ def test_runner_uses_default_structured_logger(monkeypatch, capsys):
         RulesRegistry().registry(
             Pipeline('test', lambda source: source.pipe(try_map(lambda uow: uow))),
         ),
-        opt={
-            **DEFAULT_OPTIONS,
-            'logger': None,
-        },
+        opt={'logger': None},
         concurrency=False,
         on_next=lambda _, uow: collected.append(uow),
     )
@@ -205,9 +198,6 @@ def test_runner_pipeline_can_log_with_explicit_logger(capsys, monkeypatch):
                 ),
             ),
         ),
-        opt={
-            'publish': DEFAULT_OPTIONS['publish'],
-        },
         concurrency=False,
     )
 

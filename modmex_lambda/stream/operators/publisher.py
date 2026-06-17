@@ -42,7 +42,7 @@ class Publisher(Generic[TEvent], IOperator[Uow[TEvent]]):
         logger: Optional[object] = None,
     ):
         self.connector = connector or Connector()
-        self.bus_name = bus_name or os.getenv('BUS_NAME')
+        self.bus_name = bus_name or os.getenv('BUS_NAME') or 'undefined'
         self.source = source or os.getenv('BUS_SRC') or 'custom'
         self.event_field = event_field or 'event'
         self.publish_request_entry_field = publish_request_entry_field or 'publish_request_entry'

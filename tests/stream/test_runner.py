@@ -23,6 +23,16 @@ class DummyFlavor:
         )
 
 
+class ErrorFlavor:
+    id = 'error'
+
+    def __call__(self, source):
+        def raise_error(_):
+            raise RuntimeError('boom')
+
+        return source.pipe(ops.map(raise_error))
+
+
 def test_run_executes_registered_flavors(monkeypatch):
     flushed = []
     collected = []
@@ -56,6 +66,29 @@ def test_run_executes_registered_flavors(monkeypatch):
     assert [uow['pipeline'] for _, uow in collected] == ['first', 'second']
     assert completed == ['first', 'second']
     assert len(flushed) == 1
+    assert 'bus_name' in flushed[0]
+
+
+def test_run_calls_on_error_for_pipeline_errors(monkeypatch):
+    flushed = []
+    errors = []
+    monkeypatch.setattr(
+        runner_module,
+        'flush_faults',
+        lambda opt: flushed.append(opt),
+    )
+
+    runner_module.run(
+        [{'event': {'value': 2}}],
+        RulesRegistry().registry(ErrorFlavor()),
+        opt={'logger': None, 'publish': lambda _: (lambda source: source)},
+        on_error=lambda pipeline_id, err: errors.append((pipeline_id, err)),
+        concurrency=False,
+    )
+
+    assert len(flushed) == 1
+    assert errors[0][0] == 'error'
+    assert str(errors[0][1]) == 'boom'
 
 
 def test_run_handles_empty_registry(monkeypatch):
@@ -74,3 +107,4 @@ def test_run_handles_empty_registry(monkeypatch):
     )
 
     assert len(flushed) == 1
+    assert 'bus_name' in flushed[0]

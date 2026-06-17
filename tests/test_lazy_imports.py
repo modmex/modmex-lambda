@@ -5,6 +5,8 @@ import subprocess
 import sys
 import textwrap
 
+import pytest
+
 
 def run_import_probe(code: str) -> dict[str, bool]:
     probe = textwrap.dedent(
@@ -69,3 +71,20 @@ def test_stream_sources_package_does_not_load_all_source_modules() -> None:
     assert loaded["modmex_lambda.stream.sources.kinesis"] is False
     assert loaded["modmex_lambda.stream.sources.s3"] is False
     assert loaded["modmex_lambda.stream.sources.sns"] is False
+
+
+def test_data_classes_lazy_module_dir_and_unknown_attribute() -> None:
+    import modmex_lambda.data_classes as data_classes
+
+    assert "APIGatewayProxyEvent" in dir(data_classes)
+    with pytest.raises(AttributeError):
+        getattr(data_classes, "UnknownEvent")
+
+
+def test_event_handler_dependencies_lazy_module_dir_and_unknown_attribute() -> None:
+    import modmex_lambda.event_handler.dependencies as dependencies
+
+    assert "Depends" in dir(dependencies)
+    assert dependencies.Depends is not None
+    with pytest.raises(AttributeError):
+        getattr(dependencies, "UnknownDependency")

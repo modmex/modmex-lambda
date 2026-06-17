@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import pytest
 from modmex import BaseModel
+from modmex.errors import ValidationError
 
 from modmex_lambda.data_classes import (
     APIGatewayAuthorizerEvent,
@@ -60,6 +62,11 @@ def test_parse_validates_dict_and_json_string() -> None:
     assert parsed_from_dict.amount == 10.5
     assert parsed_from_json.order_id == "o-2"
     assert parsed_from_json.amount == 20.0
+
+
+def test_parse_raises_validation_error_for_invalid_json_string() -> None:
+    with pytest.raises(ValidationError):
+        parse(event="{bad-json", model=OrderEvent)
 
 
 def test_event_parser_decorator_parses_event_and_preserves_context() -> None:
@@ -169,6 +176,25 @@ def test_event_source_parses_cognito_request_with_model() -> None:
     )
 
     assert handler(event, object()) == "user@example.com"
+
+
+def test_event_source_parses_record_payloads_with_model() -> None:
+    class Record:
+        def __init__(self, detail):
+            self.detail = detail
+
+    class RecordsEvent:
+        def __init__(self, _event):
+            self.records = [
+                Record({"order_id": "o-1", "amount": "10.5"}),
+                Record({"order_id": "o-2", "amount": "20.5"}),
+            ]
+
+    @event_source(data_class=RecordsEvent, model=OrderEvent, source="detail")
+    def handler(event: RecordsEvent, _context):
+        return [record.parsed_detail.amount for record in event.records]
+
+    assert handler({}, object()) == [10.5, 20.5]
 
 
 def test_all_cognito_user_pool_trigger_classes_are_modeled() -> None:
