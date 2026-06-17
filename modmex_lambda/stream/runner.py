@@ -1,29 +1,45 @@
 import copy
 import multiprocessing
+import os
 import threading
-from typing import Iterable, Optional
+from typing import Any, Callable, Iterable, TypedDict
 
 from reactivex import Observable, from_list, operators as ops
 from reactivex.scheduler import ThreadPoolScheduler
 
 from modmex_lambda.stream.irules_registry import IRulesRegistry
+from modmex_lambda.stream.utils.eventbridge import publish_to_event_bridge
 from modmex_lambda.stream.utils.faults import flush_faults
-from modmex_lambda.stream.utils.opt import DEFAULT_OPTIONS
 from modmex_lambda.logging import Logger
 from modmex_lambda.stream.utils.operators import tap
+
+
+PublishFactory = Callable[[dict[str, Any]], Any]
+BusName = str | Callable[[dict[str, Any]], str] | None
+
+
+class RunOptions(TypedDict, total=False):
+    bus_name: BusName
+    publish: PublishFactory
+    logger: Any
+
+
+def _publish_to_event_bridge(params: dict[str, Any]) -> Any:
+    return publish_to_event_bridge(**params)
 
 
 def run(
     events: Iterable,
     registry: IRulesRegistry,
-    opt: Optional[dict] = None,
+    opt: RunOptions | None = None,
     on_next=None,
     on_error=None,
     on_completed=None,
     concurrency=True,
 ):
     opt = {
-        **DEFAULT_OPTIONS,
+        'bus_name': os.getenv('BUS_NAME'),
+        'publish': _publish_to_event_bridge,
         **(opt or {}),
     }
     optimal_thread_count = multiprocessing.cpu_count()

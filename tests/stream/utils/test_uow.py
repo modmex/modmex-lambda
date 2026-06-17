@@ -107,3 +107,23 @@ def test_trim_and_redact_batch_and_circular_references():
     expect(result['batch'][1]['event']['token']).to(equal('[REDACTED]'))
     expect(result['batch'][1]['event']['nested']['self']).to(equal('[CIRCULAR]'))
     expect(result['metadata']['token']).to(equal('[REDACTED]'))
+
+
+def test_trim_and_redact_circular_list_tuple_and_set():
+    circular_list = ['root']
+    circular_list.append(circular_list)
+    circular_tuple = (circular_list,)
+
+    result = trim_and_redact({
+        'pipeline': 'test',
+        'record': {},
+        'event': {
+            'items': circular_list,
+            'tuple': circular_tuple,
+            'set': {'token'},
+        },
+    })
+
+    expect(result['event']['items'][1]).to(equal('[CIRCULAR]'))
+    expect(result['event']['tuple'][0]).to(equal('[CIRCULAR]'))
+    expect(result['event']['set']).to(equal({'token'}))

@@ -11,6 +11,7 @@ from modmex_lambda.connectors import AwsConnectorsModule
 from modmex_lambda.dependencies import InjectorDependencyResolver, create_dependency_resolver
 from modmex_lambda.event_handler import content_types
 from modmex_lambda.event_handler.api_gateway import APIGatewayHttpResolver, APIGatewayRestResolver
+from modmex_lambda.tracing import Tracer
 
 
 def test_root_reexport_modules_expose_public_symbols() -> None:
@@ -24,6 +25,7 @@ def test_root_reexport_modules_expose_public_symbols() -> None:
     assert modmex_lambda.AwsConnectorsModule is AwsConnectorsModule
     assert modmex_lambda.InjectorDependencyResolver is InjectorDependencyResolver
     assert modmex_lambda.create_dependency_resolver is create_dependency_resolver
+    assert modmex_lambda.Tracer is Tracer
 
 
 def test_event_handler_lazy_exports_and_unknown_attribute() -> None:

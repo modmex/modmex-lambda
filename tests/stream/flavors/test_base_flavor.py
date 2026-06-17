@@ -64,3 +64,10 @@ def test_base_flavor_bind_keeps_existing_resolver():
     flavor.bind(replacement)
 
     expect(flavor.dependency_resolver).to(equal(original))
+
+
+def test_base_flavor_creates_fresh_default_logger_per_instance():
+    first = ConcreteFlavor()
+    second = ConcreteFlavor()
+
+    expect(first.logger is second.logger).to(equal(False))

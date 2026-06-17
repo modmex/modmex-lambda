@@ -11,10 +11,10 @@ from modmex_lambda.dependencies import (
     DependencyResolver,
     default_dependency_resolver,
 )
+from modmex_lambda.logging import Logger
 from modmex_lambda.stream.flavors.iflavor import IFlavor
 from modmex_lambda.stream.operators.publisher import Publisher, PublisherOptions
 from modmex_lambda.stream.utils.contracts import Event
-from modmex_lambda.stream.utils.opt import DEFAULT_OPTIONS
 
 
 if TYPE_CHECKING:
@@ -39,7 +39,7 @@ class BaseFlavor(Generic[TEvent], IFlavor):
         dependency_resolver: Optional[DependencyResolver] = None,
         publisher_options: Optional[PublisherOptions] = None,
     ) -> None:
-        self.logger = logger or DEFAULT_OPTIONS.get("logger")
+        self.logger = logger or Logger()
         self.connector = connector
         self.dependency_resolver = dependency_resolver
         self.publisher_options = publisher_options or {}
@@ -127,7 +127,7 @@ class BaseFlavor(Generic[TEvent], IFlavor):
             self._publisher = Publisher[TEvent](
                 connector=self.connector or self.resolve(IEventBridgeConnector),
                 logger=self.logger,
-                bus_name=options.get("bus_name") or DEFAULT_OPTIONS.get("bus_name"),
+                bus_name=options.get("bus_name"),
                 source=options.get("source"),
                 event_field=options.get("event_field"),
                 publish_request_entry_field=options.get("publish_request_entry_field"),

@@ -25,9 +25,11 @@ from modmex_lambda.event_handler.dependencies.dependant import (
 )
 from modmex_lambda.event_handler.dependencies.dependency_middleware import (
     DependencyMiddleware,
+    _extract_field_value_from_body,
     _extract_header_param,
     _extract_multipart_boundary,
     _get_embed_body,
+    _is_or_contains_sequence,
     _normalize_field_value,
     _normalize_multi_params,
     _parse_multipart_body,
@@ -322,6 +324,43 @@ def test_params_analyze_param_public_markers_defaults_and_errors() -> None:
         )
 
 
+def test_params_analyze_param_edge_branches() -> None:
+    value_marker = analyze_param(
+        param_name="limit",
+        annotation=inspect.Signature.empty,
+        value=Query(),
+        is_path_param=False,
+        is_response_param=False,
+    )
+    empty_annotation = analyze_param(
+        param_name="value",
+        annotation=inspect.Signature.empty,
+        value=inspect.Signature.empty,
+        is_path_param=False,
+        is_response_param=False,
+    )
+    tuple_response = analyze_param(
+        param_name="return",
+        annotation=tuple[Payload, int],
+        value=inspect.Signature.empty,
+        is_path_param=False,
+        is_response_param=True,
+    )
+    inferred_body = analyze_param(
+        param_name="payload",
+        annotation=dict,
+        value=inspect.Signature.empty,
+        is_path_param=False,
+        is_response_param=False,
+    )
+
+    assert isinstance(value_marker.field_info, Query)
+    assert value_marker.field_info.annotation is Any
+    assert empty_annotation.field_info.annotation is Any
+    assert tuple_response.type_ is Payload
+    assert isinstance(inferred_body.field_info, Body)
+
+
 def test_params_analyze_param_supports_public_marker_classes_response_types_and_header_models() -> None:
     cookie = analyze_param(
         param_name="session",
@@ -427,6 +466,21 @@ def test_flat_dependant_body_field_and_param_classification() -> None:
         add_param_to_fields(field=unsupported, dependant=Dependant())
 
 
+def test_flat_dependant_skips_already_visited_dependency() -> None:
+    parent = Dependant(call=lambda: None)
+    child = Dependant(call=lambda: None)
+    parent.dependencies.append(
+        DependencyParam(param_name="dep", depends=Depends(lambda: None), dependant=child),
+    )
+    child.dependencies.append(
+        DependencyParam(param_name="parent", depends=Depends(lambda: None), dependant=parent),
+    )
+
+    flat = get_flat_dependant(parent)
+
+    assert flat.path_params == []
+
+
 def test_body_field_info_for_file_form_and_json_body_models() -> None:
     file_dependant = Dependant(body_params=[_field("upload", UploadFile, File())])
     form_dependant = Dependant(body_params=[_field("name", str, Form())])
@@ -444,6 +498,18 @@ def test_body_field_info_for_file_form_and_json_body_models() -> None:
         "application/x-www-form-urlencoded"
     )
     assert get_body_field_info(body_model=json_model, flat_dependant=json_dependant, required=True)[1]["media_type"]
+
+    mixed_dependant = Dependant(body_params=[
+        _field("first", dict, Body()),
+        _field("second", dict, Body()),
+    ])
+    mixed_model = compat.create_body_model(fields=mixed_dependant.body_params, model_name="MixedBody")
+    setattr(mixed_dependant.body_params[0].field_info, "media_type", "application/json")
+    setattr(mixed_dependant.body_params[1].field_info, "media_type", "application/json")
+
+    assert get_body_field_info(body_model=mixed_model, flat_dependant=mixed_dependant, required=False)[1][
+        "media_type"
+    ] == "application/json"
 
 
 def test_request_params_to_args_validation_defaults_and_errors() -> None:
@@ -497,6 +563,24 @@ def test_request_body_to_args_embed_upload_file_bytes_and_non_mapping_errors() -
     assert _get_embed_body(field=name_field, required_params=[name_field, payload_field], received_body={}) == ({}, False)
 
 
+def test_dependency_middleware_low_level_body_and_sequence_helpers() -> None:
+    value_field = _field("value", int, Body())
+    bytes_field = _field("content", bytes, File())
+    list_field = _field("values", list[int], Query())
+    errors = []
+
+    upload = UploadFile(content=b"hello", filename="hello.txt")
+
+    assert _extract_field_value_from_body(value_field, None, ("body", "value"), errors) is None
+    assert _extract_field_value_from_body(value_field, "not-a-dict", ("body", "value"), errors) is None
+    assert errors
+    assert _is_or_contains_sequence(list[int]) is True
+    assert _is_or_contains_sequence(int | list[int]) is True
+    assert _is_or_contains_sequence(int) is False
+    assert _normalize_field_value(upload, bytes_field.field_info) == b"hello"
+    assert _normalize_field_value(["1", "2"], list_field.field_info) == ["1", "2"]
+
+
 def test_normalize_multi_params_model_and_scalar_values() -> None:
     class LegacyHeaderModel(BaseModel):
         x_tenant_id: str
@@ -513,6 +597,20 @@ def test_normalize_multi_params_model_and_scalar_values() -> None:
     assert normalized["headers"] == {"x_tenant_id": "mx"}
 
 
+def test_normalize_multi_params_uses_field_name_when_model_allows_it() -> None:
+    class AliasHeaderModel(BaseModel):
+        x_tenant_id: str
+
+    model = ModelField(name="headers", field_info=Header(annotation=AliasHeaderModel, alias="headers"))
+    AliasHeaderModel.model_fields = {"x_tenant_id": SimpleNamespace(alias="x-tenant-id", annotation=str)}
+    AliasHeaderModel.model_config = {"populate_by_name": True}
+    params = {"x_tenant_id": ["mx"]}
+
+    normalized = _normalize_multi_params(params, [model])
+
+    assert normalized["headers"] == {"x-tenant-id": "mx"}
+
+
 def test_multipart_helpers_parse_fields_files_repeated_values_and_boundaries() -> None:
     body = (
         b"--abc\r\n"
@@ -525,16 +623,30 @@ def test_multipart_helpers_parse_fields_files_repeated_values_and_boundaries() -
         b"--abc\r\n"
         b'Content-Disposition: form-data; name="name"\r\n\r\n'
         b"Lovelace\r\n"
+        b"--abc\r\n"
+        b'Content-Disposition: form-data; name="name"\r\n\r\n'
+        b"Byron\r\n"
         b"--abc--\r\n"
+    )
+    malformed = (
+        b"--abc\r\n"
+        b"Content-Disposition: form-data\r\n\r\n"
+        b"ignored\r\n"
+        b"--abc\r\n"
+        b"header-without-body\r\n"
+        b"--abc--"
     )
 
     parsed = _parse_multipart_body(body, "abc")
+    malformed_parsed = _parse_multipart_body(malformed, "abc")
 
     assert _extract_multipart_boundary('multipart/form-data; boundary="abc"') == "abc"
     assert _extract_multipart_boundary("application/json") is None
     assert _extract_header_param('Content-Disposition: form-data; name="file"', "name") == "file"
     assert _extract_header_param("Content-Disposition: form-data", "name") is None
-    assert parsed["name"] == ["Ada", "Lovelace"]
+    assert _extract_header_param('Content-Disposition: form-data; name="file', "name") is None
+    assert parsed["name"] == ["Ada", "Lovelace", "Byron"]
+    assert malformed_parsed == {}
     assert parsed["file"].filename == "hello.txt"
     assert parsed["file"].content == b"hello"
     assert parsed["file"].content_type == "text/plain"

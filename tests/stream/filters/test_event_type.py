@@ -1,5 +1,6 @@
 import re
 from expects import equal, expect
+import pytest
 from modmex_lambda.stream.filters.event_type import filter_on_event_type
 
 
@@ -36,3 +37,11 @@ def test_filter_regex():
     expect(filter_on_event_type(rule, {'event': {'type': 'thing-deleted'}})).to(equal(True))
     expect(filter_on_event_type(rule, {'event': {'type': 'thing-undeleted'}})).to(equal(True))
     expect(filter_on_event_type(rule, {'event': {'type': 'thing'}})).to(equal(False))
+
+
+def test_filter_rejects_unsupported_event_type_rule():
+    with pytest.raises(Exception, match='Must be a string'):
+        filter_on_event_type(
+            {'id': 'bad-rule', 'event_type': object()},
+            {'event': {'type': 'thing-created'}},
+        )

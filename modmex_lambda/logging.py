@@ -7,7 +7,10 @@ import os
 import sys
 import traceback
 from datetime import datetime, timezone
+from threading import RLock
 from typing import Any, Callable, TextIO
+
+from modmex_lambda.shared.json_encoder import JSONEncoder
 
 
 _LEVELS = {
@@ -17,6 +20,17 @@ _LEVELS = {
     "ERROR": 40,
     "CRITICAL": 50,
 }
+
+
+class _LoggerJSONEncoder(JSONEncoder):
+    def default(self, obj: object) -> object:
+        if hasattr(obj, "model_dump"):
+            value = obj.model_dump()
+            try:
+                return json.loads(value)
+            except (TypeError, ValueError):
+                return value
+        return super().default(obj)
 
 
 class Logger:
@@ -31,28 +45,36 @@ class Logger:
     ) -> None:
         self._service = service or os.getenv("SERVICE_NAME") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") or "service"
         self._stream = stream or sys.stdout
-        self._serialize = json_serializer or (lambda payload: json.dumps(payload, separators=(",", ":"), default=str))
+        self._serialize = json_serializer or self._serialize_payload
         self._correlation_id_header = correlation_id_header.lower()
         self._level = self._resolve_level(level)
         self._persistent_keys: dict[str, Any] = {}
         self._context: object | None = None
         self._event: dict[str, Any] | None = None
+        self._lock = RLock()
 
     def set_context(self, *, context: object | None = None, event: dict[str, Any] | None = None) -> None:
-        self._context = context
-        self._event = event
+        with self._lock:
+            self._context = context
+            self._event = event
 
     def append_keys(self, **kwargs: Any) -> None:
-        self._persistent_keys.update(kwargs)
+        with self._lock:
+            self._persistent_keys.update(kwargs)
 
     def clear_state(self) -> None:
-        self._persistent_keys.clear()
+        with self._lock:
+            self._persistent_keys.clear()
+            self._context = None
+            self._event = None
 
     def set_level(self, level: str | int) -> None:
-        self._level = self._resolve_level(level)
+        with self._lock:
+            self._level = self._resolve_level(level)
 
     def is_enabled_for(self, level: str | int) -> bool:
-        return self._resolve_level(level) >= self._level
+        with self._lock:
+            return self._resolve_level(level) >= self._level
 
     def debug(self, message: Any, *args: Any, **kwargs: Any) -> None:
         self._log("DEBUG", message, *args, **kwargs)
@@ -70,37 +92,44 @@ class Logger:
         self._log("CRITICAL", message, *args, exc_info=exc_info, **kwargs)
 
     def _log(self, level: str, message: Any, *args: Any, exc_info: bool = False, **kwargs: Any) -> None:
-        if not self.is_enabled_for(level):
-            return
+        with self._lock:
+            if not self.is_enabled_for(level):
+                return
 
-        record: dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "level": level,
-            "service": self._service,
-            "message": self._format_message(message, args),
-        }
-        record.update(self._persistent_keys)
+            record: dict[str, Any] = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "level": level,
+                "service": self._service,
+                "message": self._format_message(message, args),
+            }
+            record.update(self._persistent_keys)
 
-        request_id = self._extract_request_id()
-        if request_id:
-            record["request_id"] = request_id
+            request_id = self._extract_request_id()
+            if request_id:
+                record["request_id"] = request_id
 
-        correlation_id = self._extract_correlation_id()
-        if correlation_id and "correlation_id" not in record:
-            record["correlation_id"] = correlation_id
+            correlation_id = self._extract_correlation_id()
+            if correlation_id and "correlation_id" not in record:
+                record["correlation_id"] = correlation_id
 
-        record.update(kwargs)
+            record.update(kwargs)
 
-        if exc_info:
-            record["exception"] = traceback.format_exc()
+            if exc_info:
+                record["exception"] = traceback.format_exc()
 
-        self._stream.write(self._serialize(record) + "\n")
+            self._stream.write(self._serialize(record) + "\n")
 
     def _resolve_level(self, level: str | int | None) -> int:
         if isinstance(level, int):
             return level
         level_name = (level or os.getenv("LOG_LEVEL") or "INFO").upper()
         return _LEVELS.get(level_name, _LEVELS["INFO"])
+
+    def _serialize_payload(self, payload: dict[str, Any]) -> str:
+        try:
+            return json.dumps(payload, separators=(",", ":"), cls=_LoggerJSONEncoder)
+        except TypeError:
+            return json.dumps(payload, separators=(",", ":"), default=str)
 
     def _format_message(self, message: Any, args: tuple[Any, ...]) -> Any:
         if not args:

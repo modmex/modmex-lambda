@@ -85,6 +85,7 @@ class Logger:
 def test_flush_faults(monkeypatch):
     logger = Logger()
     published = []
+    publish_params = []
     monkeypatch.setattr(faults_module, 'the_faults', [
         {
             'id': 'fault-1',
@@ -92,7 +93,9 @@ def test_flush_faults(monkeypatch):
         },
     ])
 
-    def publish(_):
+    def publish(params):
+        publish_params.append(params)
+
         def wrapper(source):
             def on_next(uow):
                 published.append(uow)
@@ -101,6 +104,7 @@ def test_flush_faults(monkeypatch):
         return wrapper
 
     flush_faults({
+        'bus_name': 'fault-bus',
         'logger': logger,
         'publish': publish,
     })
@@ -114,4 +118,8 @@ def test_flush_faults(monkeypatch):
             },
         },
     ]))
+    expect(publish_params).to(equal([{
+        'logger': logger,
+        'bus_name': 'fault-bus',
+    }]))
     expect(faults_module.the_faults).to(equal([]))
