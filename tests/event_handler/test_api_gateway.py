@@ -58,6 +58,11 @@ class AuditService:
         return {"user_id": user_id, "tenant_id": self.tenant_id}
 
 
+class DumpJsonModel:
+    def model_dump_json(self) -> str:
+        return '{"ok":true}'
+
+
 def test_public_api_requires_explicit_api_gateway_resolver() -> None:
     assert modmex_lambda.APIGatewayHttpResolver is APIGatewayHttpResolver
     assert modmex_lambda.APIGatewayRestResolver is APIGatewayRestResolver
@@ -207,6 +212,34 @@ def test_http_resolver_serializes_cookies_in_http_api_shape() -> None:
     assert response["headers"]["Content-Type"] == "application/json"
     assert response["cookies"] == ["seen=true; Secure"]
     assert response_body(response) == {"ok": True}
+
+
+def test_http_resolver_serializes_model_dump_json_body_without_double_encoding() -> None:
+    app = APIGatewayHttpResolver()
+
+    @app.get("/model")
+    def model():
+        return DumpJsonModel()
+
+    response = app.resolve(http_v2_event("GET", "/model"), object())
+
+    assert response["headers"]["Content-Type"] == "application/json"
+    assert response["body"] == '{"ok":true}'
+    assert response_body(response) == {"ok": True}
+
+
+def test_http_resolver_serializes_no_content_response_with_empty_body() -> None:
+    app = APIGatewayHttpResolver()
+
+    @app.delete("/users/<user_id>", status_code=204)
+    def delete_user(user_id: str):
+        return None
+
+    response = app.resolve(http_v2_event("DELETE", "/users/42"), object())
+
+    assert response["statusCode"] == 204
+    assert response["body"] == ""
+    assert response_body(response) is None
 
 
 def test_static_dynamic_any_404_and_405_routing() -> None:

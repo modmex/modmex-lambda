@@ -44,3 +44,28 @@ def test_gateway_response_builder_uses_first_origin_and_response_compression_ove
     assert payload["isBase64Encoded"] is False
     assert payload["multiValueHeaders"]["Access-Control-Allow-Origin"] == ["*"]
     assert "Content-Encoding" not in payload["multiValueHeaders"]
+
+
+def test_gateway_response_builder_serializes_none_body_as_empty_string() -> None:
+    event = APIGatewayProxyEvent(
+        {
+            "path": "/users/42",
+            "httpMethod": "DELETE",
+            "headers": {},
+            "multiValueHeaders": {},
+            "requestContext": {},
+        },
+    )
+    response = Response(
+        status_code=204,
+        body=None,
+        content_type=content_types.APPLICATION_JSON,
+    )
+
+    payload = GatewayResponseBuilder(
+        response=response,
+        route=None,
+        json_serializer=lambda value: "null",
+    ).serialize(event)
+
+    assert payload["body"] == ""
