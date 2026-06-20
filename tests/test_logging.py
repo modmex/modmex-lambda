@@ -11,6 +11,9 @@ from modmex_lambda.logging import Logger
 
 class Context:
     aws_request_id = "req-123"
+    function_name = "orders-handler"
+    memory_limit_in_mb = "256"
+    invoked_function_arn = "arn:aws:lambda:us-east-1:123456789012:function:orders-handler"
 
 
 class Status(Enum):
@@ -57,6 +60,47 @@ def test_logger_includes_request_id_and_correlation_id_from_context_and_event() 
     payload = json.loads(stream.getvalue().strip())
     assert payload["request_id"] == "req-123"
     assert payload["correlation_id"] == "corr-1"
+
+
+def test_logger_inject_lambda_context_sets_context_and_logs_event() -> None:
+    stream = io.StringIO()
+    logger = Logger(service="orders", stream=stream)
+
+    @logger.inject_lambda_context(log_event=True)
+    def handler(event, context):
+        logger.info("handled")
+        return {"ok": True}
+
+    result = handler({"headers": {"X-Correlation-Id": "corr-1"}, "order_id": "o-1"}, Context())
+
+    lines = [json.loads(line) for line in stream.getvalue().splitlines() if line.strip()]
+    assert result == {"ok": True}
+    assert lines[0]["message"] == "lambda event"
+    assert lines[0]["event"]["order_id"] == "o-1"
+    assert lines[0]["request_id"] == "req-123"
+    assert lines[0]["correlation_id"] == "corr-1"
+    assert lines[0]["function_name"] == "orders-handler"
+    assert lines[0]["function_memory_size"] == "256"
+    assert lines[0]["function_arn"] == "arn:aws:lambda:us-east-1:123456789012:function:orders-handler"
+    assert lines[0]["function_request_id"] == "req-123"
+    assert lines[1]["message"] == "handled"
+    assert lines[1]["request_id"] == "req-123"
+
+
+def test_logger_inject_lambda_context_clears_state_for_warm_starts() -> None:
+    stream = io.StringIO()
+    logger = Logger(service="orders", stream=stream)
+    logger.append_keys(tenant="stale")
+
+    @logger.inject_lambda_context
+    def handler(event, context):
+        logger.info("handled")
+
+    handler({"headers": {}}, Context())
+
+    payload = json.loads(stream.getvalue().strip())
+    assert "tenant" not in payload
+    assert payload["function_name"] == "orders-handler"
 
 
 def test_logger_append_keys_and_clear_state() -> None:

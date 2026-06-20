@@ -7,6 +7,7 @@ import os
 import sys
 import traceback
 from datetime import datetime, timezone
+from functools import wraps
 from threading import RLock
 from typing import Any, Callable, TextIO
 
@@ -57,6 +58,28 @@ class Logger:
         with self._lock:
             self._context = context
             self._event = event
+
+    def inject_lambda_context(
+        self,
+        func: Callable[..., Any] | None = None,
+        *,
+        log_event: bool = False,
+    ) -> Callable[..., Any]:
+        def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
+            @wraps(handler)
+            def wrapper(event: dict[str, Any], context: object, *args: Any, **kwargs: Any) -> Any:
+                self.clear_state()
+                self.set_context(context=context, event=event)
+                self._append_lambda_context_keys(context)
+                if log_event:
+                    self.info("lambda event", event=event)
+                return handler(event, context, *args, **kwargs)
+
+            return wrapper
+
+        if func is None:
+            return decorator
+        return decorator(func)
 
     def append_keys(self, **kwargs: Any) -> None:
         with self._lock:
@@ -137,6 +160,18 @@ class Logger:
         if isinstance(message, str):
             return message % args
         return message
+
+    def _append_lambda_context_keys(self, context: object | None) -> None:
+        if context is None:
+            return
+
+        keys = {
+            "function_name": getattr(context, "function_name", None),
+            "function_memory_size": getattr(context, "memory_limit_in_mb", None),
+            "function_arn": getattr(context, "invoked_function_arn", None),
+            "function_request_id": getattr(context, "aws_request_id", None),
+        }
+        self.append_keys(**{key: value for key, value in keys.items() if value is not None})
 
     def _extract_request_id(self) -> str | None:
         if self._context is None:

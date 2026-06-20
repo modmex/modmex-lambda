@@ -574,15 +574,17 @@ from modmex_lambda import Logger
 logger = Logger()
 
 
+@logger.inject_lambda_context(log_event=True)
 def lambda_handler(event, context):
-    logger.set_context(context=context, event=event)
     logger.append_keys(tenant_id="mx")
     logger.info("request received")
 ```
 
 The logger emits structured JSON, reads `LOG_LEVEL`, uses `SERVICE_NAME` or
 `AWS_LAMBDA_FUNCTION_NAME` when no service is passed, and can extract Lambda
-request IDs and API Gateway correlation IDs.
+request IDs and API Gateway correlation IDs. The `inject_lambda_context`
+decorator resets logger state by default for warm Lambda invocations, injects
+Lambda metadata, and can optionally log the incoming event.
 
 ## Tracing
 
