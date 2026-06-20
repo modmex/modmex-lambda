@@ -20,8 +20,13 @@ class GatewayResponseBuilder:
         self.json_serializer = json_serializer
 
     def serialize(self, event: BaseProxyEvent, cors: CORSConfig | None = None) -> dict[str, Any]:
-        if self.response.is_json() and not isinstance(self.response.body, (str, bytes)):
-            self.response.body = self.json_serializer(self.response.body)
+        if self.response.body is None:
+            self.response.body = ""
+        elif self.response.is_json() and not isinstance(self.response.body, (str, bytes)):
+            if hasattr(self.response.body, "model_dump_json"):
+                self.response.body = self.response.body.model_dump_json()
+            else:
+                self.response.body = self.json_serializer(self.response.body)
 
         self._handle_route_configuration(event, cors)
 
