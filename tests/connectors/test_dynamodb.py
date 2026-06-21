@@ -1,4 +1,5 @@
 from expects import equal, expect, raise_error
+
 from modmex_lambda.connectors import dynamodb
 from modmex_lambda.connectors.dynamodb import (
     Connector,
@@ -7,113 +8,150 @@ from modmex_lambda.connectors.dynamodb import (
 )
 
 
-class BatchWriter:
-    def __init__(self, table):
-        self.table = table
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        return False
-
-    def put_item(self, Item):  # pylint: disable=invalid-name
-        self.table.batch_puts.append(Item)
-
-    def delete_item(self, Key):  # pylint: disable=invalid-name
-        self.table.batch_deletes.append(Key)
-
-
-class Table:
+class Client:
     def __init__(self):
         self.calls = []
-        self.query_pages = []
-        self.batch_puts = []
-        self.batch_deletes = []
+        self.batch_get_responses = []
 
     def get_item(self, **kwargs):
         self.calls.append(('get_item', kwargs))
         return {
-            'Item': kwargs,
+            'Item': {
+                'pk': {'S': 'thing-1'},
+                'count': {'N': '2'},
+            },
         }
 
     def update_item(self, **kwargs):
         self.calls.append(('update_item', kwargs))
         return {
-            'Attributes': kwargs,
+            'Attributes': {
+                'pk': {'S': 'thing-1'},
+                'name': {'S': 'Desk'},
+            },
         }
 
     def put_item(self, **kwargs):
         self.calls.append(('put_item', kwargs))
-        return {
-            'ok': True,
-        }
+        return {'ok': True}
 
     def query(self, **kwargs):
         self.calls.append(('query', kwargs))
-        return self.query_pages.pop(0) if self.query_pages else {
-            'Items': [],
+        return {
+            'Items': [
+                {
+                    'pk': {'S': 'thing-1'},
+                    'name': {'S': 'Desk'},
+                },
+            ],
         }
 
-    def batch_writer(self):
-        return BatchWriter(self)
-
-
-class Client:
-    def __init__(self):
-        self.table = Table()
-        self.batch_get_responses = []
-        self.batch_get_calls = []
-
-    def Table(self, _):  # pylint: disable=invalid-name
-        return self.table
+    def scan(self, **kwargs):
+        self.calls.append(('scan', kwargs))
+        return {'Items': []}
 
     def batch_get_item(self, **kwargs):
-        self.batch_get_calls.append(kwargs)
+        self.calls.append(('batch_get_item', kwargs))
         return self.batch_get_responses.pop(0)
 
+    def delete_item(self, **kwargs):
+        self.calls.append(('delete_item', kwargs))
+        return {'ok': True}
 
-def test_dynamodb_connector_table_methods():
+    def batch_write_item(self, **kwargs):
+        self.calls.append(('batch_write_item', kwargs))
+        return {}
+
+
+def test_dynamodb_connector_marshalls_get_and_unmarshalls_item():
     client = Client()
     connector = Connector('table', client=client)
 
-    expect(connector.get({'Key': {'pk': '1'}})).to(equal({'Item': {'Key': {'pk': '1'}}}))
-    expect(connector.update({'Key': {'pk': '1'}})).to(equal({'Attributes': {'Key': {'pk': '1'}}}))
-    expect(connector.put({'Item': {'pk': '1'}})).to(equal({'ok': True}))
-    expect(connector.query({'KeyConditionExpression': 'pk = :pk'})).to(equal({'Items': []}))
-    expect(client.table.calls).to(equal([
-        ('get_item', {'Key': {'pk': '1'}}),
-        ('update_item', {'Key': {'pk': '1'}}),
-        ('put_item', {'Item': {'pk': '1'}}),
-        ('query', {'KeyConditionExpression': 'pk = :pk'}),
+    expect(connector.get({'Key': {'pk': 'thing-1', 'sk': 'thing'}})).to(equal({
+        'Item': {
+            'pk': 'thing-1',
+            'count': 2,
+        },
+    }))
+    expect(client.calls).to(equal([
+        (
+            'get_item',
+            {
+                'TableName': 'table',
+                'Key': {
+                    'pk': {'S': 'thing-1'},
+                    'sk': {'S': 'thing'},
+                },
+            },
+        ),
     ]))
 
 
-def test_query_all_pages_results():
+def test_dynamodb_connector_marshalls_update_expression_values():
     client = Client()
-    client.table.query_pages = [
-        {
-            'Items': [
-                {
-                    'id': '1',
-                },
-            ],
-            'LastEvaluatedKey': {
-                'pk': '1',
-            },
-        },
-        {
-            'Items': [
-                {
-                    'id': '2',
-                },
-            ],
-        },
-    ]
     connector = Connector('table', client=client)
-    params = {
-        'KeyConditionExpression': 'pk = :pk',
-    }
+
+    expect(connector.update({
+        'Key': {'pk': 'thing-1', 'sk': 'thing'},
+        'ExpressionAttributeValues': {
+            ':name': 'Desk',
+            ':count': 2,
+        },
+        'UpdateExpression': 'SET #name = :name, #count = :count',
+    })).to(equal({
+        'Attributes': {
+            'pk': 'thing-1',
+            'name': 'Desk',
+        },
+    }))
+    expect(client.calls[0]).to(equal((
+        'update_item',
+        {
+            'TableName': 'table',
+            'Key': {
+                'pk': {'S': 'thing-1'},
+                'sk': {'S': 'thing'},
+            },
+            'ExpressionAttributeValues': {
+                ':name': {'S': 'Desk'},
+                ':count': {'N': '2'},
+            },
+            'UpdateExpression': 'SET #name = :name, #count = :count',
+        },
+    )))
+
+
+def test_query_all_pages_results():
+    class PagedClient(Client):
+        def __init__(self):
+            super().__init__()
+            self.pages = [
+                {
+                    'Items': [
+                        {
+                            'id': {'S': '1'},
+                        },
+                    ],
+                    'LastEvaluatedKey': {
+                        'pk': {'S': '1'},
+                    },
+                },
+                {
+                    'Items': [
+                        {
+                            'id': {'S': '2'},
+                        },
+                    ],
+                },
+            ]
+
+        def query(self, **kwargs):
+            self.calls.append(('query', kwargs))
+            return self.pages.pop(0)
+
+    client = PagedClient()
+    connector = Connector('table', client=client)
+    params = {'KeyConditionExpression': 'pk = :pk'}
 
     expect(connector.query_all(params)).to(equal([
         {
@@ -123,7 +161,9 @@ def test_query_all_pages_results():
             'id': '2',
         },
     ]))
-    expect(client.table.calls[1][1]['ExclusiveStartKey']).to(equal({'pk': '1'}))
+    expect(client.calls[1][1]['ExclusiveStartKey']).to(equal({
+        'pk': {'S': '1'},
+    }))
 
 
 def test_batch_get_retries_unprocessed_keys(monkeypatch):
@@ -133,7 +173,7 @@ def test_batch_get_retries_unprocessed_keys(monkeypatch):
             'Responses': {
                 'table': [
                     {
-                        'id': '1',
+                        'id': {'S': '1'},
                     },
                 ],
             },
@@ -141,7 +181,7 @@ def test_batch_get_retries_unprocessed_keys(monkeypatch):
                 'table': {
                     'Keys': [
                         {
-                            'pk': '2',
+                            'pk': {'S': '2'},
                         },
                     ],
                 },
@@ -151,7 +191,7 @@ def test_batch_get_retries_unprocessed_keys(monkeypatch):
             'Responses': {
                 'table': [
                     {
-                        'id': '2',
+                        'id': {'S': '2'},
                     },
                 ],
             },
@@ -175,16 +215,16 @@ def test_batch_get_retries_unprocessed_keys(monkeypatch):
             },
         },
     })).to(equal({
-            'Responses': {
-                'table': [
-                    {
-                        'id': '1',
-                    },
-                    {
-                        'id': '2',
-                    },
-                ],
-            },
+        'Responses': {
+            'table': [
+                {
+                    'id': '1',
+                },
+                {
+                    'id': '2',
+                },
+            ],
+        },
         'attempts': [
             {
                 'Responses': {
@@ -215,17 +255,20 @@ def test_batch_get_retries_unprocessed_keys(monkeypatch):
             },
         ],
     }))
-    expect(client.batch_get_calls[1]).to(equal({
-        'RequestItems': {
-            'table': {
-                'Keys': [
-                    {
-                        'pk': '2',
-                    },
-                ],
+    expect(client.calls[1]).to(equal((
+        'batch_get_item',
+        {
+            'RequestItems': {
+                'table': {
+                    'Keys': [
+                        {
+                            'pk': {'S': '2'},
+                        },
+                    ],
+                },
             },
         },
-    }))
+    )))
 
 
 def test_batch_get_raises_after_max_retries(monkeypatch):
@@ -237,7 +280,7 @@ def test_batch_get_raises_after_max_retries(monkeypatch):
                 'table': {
                     'Keys': [
                         {
-                            'pk': '1',
+                            'pk': {'S': '1'},
                         },
                     ],
                 },
@@ -249,7 +292,7 @@ def test_batch_get_raises_after_max_retries(monkeypatch):
                 'table': {
                     'Keys': [
                         {
-                            'pk': '1',
+                            'pk': {'S': '1'},
                         },
                     ],
                 },
@@ -280,8 +323,40 @@ def test_bulk_insert_and_delete():
         },
     ])
 
-    expect(client.table.batch_puts).to(equal([{'pk': '1'}]))
-    expect(client.table.batch_deletes).to(equal([{'pk': '1'}]))
+    expect(client.calls).to(equal([
+        (
+            'batch_write_item',
+            {
+                'RequestItems': {
+                    'table': [
+                        {
+                            'PutRequest': {
+                                'Item': {
+                                    'pk': {'S': '1'},
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+        ),
+        (
+            'batch_write_item',
+            {
+                'RequestItems': {
+                    'table': [
+                        {
+                            'DeleteRequest': {
+                                'Key': {
+                                    'pk': {'S': '1'},
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+        ),
+    ]))
 
 
 def test_unprocessed_and_accumulate_helpers():

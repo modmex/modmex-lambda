@@ -17,9 +17,12 @@ class AwsConnectorsModule(Module):
     @singleton
     @provider
     def provide_dynamodb(self) -> IDynamodbConnector:
+        import os
         from modmex_lambda.connectors.dynamodb import Connector
 
-        return Connector()
+        return Connector(
+            table_name=os.getenv('ENTITY_TABLE_NAME') or os.getenv('EVENT_TABLE_NAME'),
+        )
 
     @singleton
     @provider
