@@ -55,7 +55,7 @@ def test_lazy_boto_clients(monkeypatch):
             'region_name': 'us-east-1',
         },
     }))
-    expect(DynamoConnector('table').client).to(equal({'resource': 'dynamodb', 'kwargs': {}}))
+    expect(DynamoConnector('table').client).to(equal({'client': 'dynamodb', 'kwargs': {}}))
 
     expect(boto.client_calls).to(equal([
         (('cloudwatch',), {}),
@@ -66,8 +66,7 @@ def test_lazy_boto_clients(monkeypatch):
         (('sns',), {
             'region_name': 'us-east-1',
         }),
-    ]))
-    expect(boto.resource_calls).to(equal([
         (('dynamodb',), {}),
     ]))
+    expect(boto.resource_calls).to(equal([]))
     expect(boto.sessions).to(equal([]))

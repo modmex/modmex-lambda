@@ -13,6 +13,8 @@ API Gateway proxy events, fast routing, request binding, response serialization,
 middleware, dependency injection, stream sources, parsing, and structured
 logging.
 
+The fuller documentation site lives in [`docs/`](docs/).
+
 ## Install
 
 ```bash
@@ -956,36 +958,65 @@ materialize so queries stay local and fast, and each service owns the model it
 needs instead of querying another service synchronously.
 
 ```python
+from modmex_lambda.persistence.dynamodb import MaterializedViewMixin
 from modmex_lambda.stream.flavors.materialize import Materialize
 from modmex_lambda.stream.rules_registry import RulesRegistry
 from modmex_lambda.stream.sources import KinesisSource
-from modmex_lambda.stream.utils.dynamodb import update_expression
 
 
-def to_thing_view_update(uow):
-    thing = uow["event"]["thing"]
-    return {
-        "Key": {
-            "pk": thing["id"],
-            "sk": "THING",
-        },
-        **update_expression({
-            "name": thing["name"],
-            "timestamp": uow["event"]["timestamp"],
-        }),
-    }
+class ThingViewRepository(MaterializedViewMixin):
+    discriminator = "thing"
+
+
+to_update_request = ThingViewRepository.materialized_update_request_mapper()
 
 
 registry = RulesRegistry().registry(
     Materialize({
         "id": "materialize-thing",
         "event_type": "thing-created",
-        "to_update_request": to_thing_view_update,
+        "to_update_request": to_update_request,
     })
 )
 
 handler = KinesisSource(registry, concurrency=False).handle
 ```
+
+`MaterializedViewMixin` is a persistence helper for the common DynamoDB case:
+copy the entity from `uow["event"][discriminator]`, build a `Key` with
+`pk=entity["id"]` and `sk=discriminator`, add stream-compatible fields, and
+protect the write with `timestamp_condition()` so older events do not overwrite
+newer records. It adds stream-compatible fields such as `discriminator`,
+`timestamp`, `deleted`, `latched`, `ttl`, and `awsregion` to the update
+expression.
+
+Override the hooks when the event source, key, projection, or enrichment is
+different from the default:
+
+```python
+from modmex_lambda.persistence.dynamodb import MaterializedViewMixin
+
+
+class ThingSearchViewRepository(MaterializedViewMixin):
+    discriminator = "thing-search"
+    materialized_source_name = "thing"
+
+    def materialized_key(self, uow, thing):
+        return {
+            "pk": thing["tenant_id"],
+            "sk": f"thing-search#{thing['id']}",
+        }
+
+    def materialized_fields(self, uow, thing):
+        return {
+            **super().materialized_fields(uow, thing),
+            "search_text": f"{thing['name']} {thing['tenant_id']}",
+        }
+```
+
+Use `DynamoDBUpdateRequestMixin.build_update_request()` directly when you already
+have the key and fields but still want the standard `UpdateItem` expression and
+timestamp guard.
 
 Use `split_on` and `split_target_field` when one event updates several records,
 for example one `order-created` event materializing each order item.

@@ -219,3 +219,5 @@ __marimo__/
 .benchmark/
 .vscode/
 .doc/
+
+.DS_Store
