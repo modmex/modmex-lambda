@@ -4,21 +4,23 @@ from __future__ import annotations
 
 import inspect
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Protocol, TypeVar
 
 if TYPE_CHECKING:
     from modmex_lambda.connectors import AwsConnectorsModule
 
+
+T = TypeVar("T")
 
 class DependencyResolver(Protocol):
     """Resolves a dependency token into the value passed to a handler."""
 
     def resolve(
         self,
-        dependency: Callable[..., Any] | type[Any],
+        dependency: type[T],
         *,
         values: dict[str, Any] | None = None,
-    ) -> Any:
+    ) -> T:
         ...
 
 
@@ -27,10 +29,10 @@ class DefaultDependencyResolver:
 
     def resolve(
         self,
-        dependency: Callable[..., Any] | type[Any],
+        dependency: type[T],
         *,
         values: dict[str, Any] | None = None,
-    ) -> Any:
+    ) -> T:
         return dependency(**(values or {}))
 
 
@@ -42,10 +44,10 @@ class InjectorDependencyResolver:
 
     def resolve(
         self,
-        dependency: Callable[..., Any] | type[Any],
+        dependency: type[T],
         *,
         values: dict[str, Any] | None = None,
-    ) -> Any:
+    ) -> T:
         kwargs = values or {}
 
         if hasattr(self.injector, "call_with_injection") and not inspect.isclass(dependency):
