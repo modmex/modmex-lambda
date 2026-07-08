@@ -56,7 +56,7 @@ def test_materialized_view_mixin_replicates_event_entity_with_stream_fields(monk
             "timestamp": 1548967022000,
             "thing": {
                 "id": "thing-1",
-                "pk": "ignored",
+                "pk": "thing#thing-1",
                 "sk": "thing",
                 "name": "Desk",
             },
@@ -65,7 +65,7 @@ def test_materialized_view_mixin_replicates_event_entity_with_stream_fields(monk
 
     request = ThingMaterializer().to_materialized_update_request(uow)
 
-    assert request["Key"] == {"pk": "thing-1", "sk": "thing"}
+    assert request["Key"] == {"pk": "thing#thing-1", "sk": "thing"}
     assert request["ExpressionAttributeValues"][":id"] == "thing-1"
     assert request["ExpressionAttributeValues"][":name"] == "Desk"
     assert request["ExpressionAttributeValues"][":discriminator"] == "thing"

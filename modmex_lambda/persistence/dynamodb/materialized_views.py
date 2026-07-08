@@ -55,7 +55,7 @@ class MaterializedViewMixin(DynamoDBUpdateRequestMixin):
 
     def materialized_key(self, uow: dict[str, Any], entity: dict[str, Any]) -> dict[str, Any]:
         return {
-            "pk": entity["id"],
+            "pk": entity.get('pk') or entity.get('id'),
             "sk": entity.get("sk", self.discriminator),
         }
 
