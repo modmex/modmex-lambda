@@ -246,16 +246,16 @@ files = [
 
 [[package]]
 name = "modmex"
-version = "1.1.10"
+version = "1.1.12"
 description = "Lightweight Python models built on dataclasses with validation, serialization, and type-safe data mapping"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "modmex-1.1.10-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:4ccb2436ece4d58b384e50847183b49c65d713e046fd3325ac2ce1c1498f1835"},
-    {file = "modmex-1.1.10-cp310-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:72d6667236a2937b1f7a79725bf7e0d2beef16bf317f4b37f5254a2333b002ee"},
-    {file = "modmex-1.1.10-cp310-abi3-win_amd64.whl", hash = "sha256:13751a4b3a39fdc6dc566527f5410694be009848df90ed07cbf793ad1d888dd9"},
-    {file = "modmex-1.1.10.tar.gz", hash = "sha256:9082d7e8319f4b8380b4e69edb1b60cfa61756b3ab1909f388285d90d4df3c08"},
+    {file = "modmex-1.1.12-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:af76140cf31556cfc82dc2c407f9d72cf67594c17348c9eb57e6fb5f883be39f"},
+    {file = "modmex-1.1.12-cp310-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:e8394ab4da78bd9ab1c53ef5552fa4a3fef3659f894a0cb1f0bb6a5fa8dd26cb"},
+    {file = "modmex-1.1.12-cp310-abi3-win_amd64.whl", hash = "sha256:7cd27992488c233b2ad0c90f83b74debe6dc316c28aa4322b76ddb0d3ae16ec0"},
+    {file = "modmex-1.1.12.tar.gz", hash = "sha256:654e276f196bf025d84b58150015cd0ee5de7e1feb52d74e5263de84f259c0f2"},
 ]
 
 [package.dependencies]
@@ -604,4 +604,4 @@ injector = ["injector"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0"
-content-hash = "4643613426d3b53766edd33cd497692e9b86fb855390112785c6da9c7a4ad45d"
+content-hash = "01ddd2e647add817fae38770a828cea5f1d2c93ca33aa0e8a193b2d5155f318e"
