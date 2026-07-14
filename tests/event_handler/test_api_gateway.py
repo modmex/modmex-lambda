@@ -325,6 +325,21 @@ def test_include_router_and_strip_prefixes() -> None:
     assert response_body(response) == {"ok": True}
 
 
+def test_include_router_respects_prefix() -> None:
+    router = Router()
+    app = APIGatewayHttpResolver()
+
+    @router.get("/health")
+    def health():
+        return {"ok": True}
+
+    app.include_router(router, prefix="/api")
+
+    response = app.resolve(http_v2_event("GET", "/api/health"), object())
+
+    assert response_body(response) == {"ok": True}
+
+
 def test_include_nested_routers() -> None:
     grandchild = Router()
     child = Router()
