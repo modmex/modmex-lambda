@@ -168,8 +168,8 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
             cache_control=cache_control,
         )
 
-    def include_router(self, router: Router) -> None:
-        self._router.include_router(router)
+    def include_router(self, router: Router, prefix: str = "") -> None:
+        self._router.include_router(router, prefix=prefix)
 
     def resolve(self, event: dict[str, Any], context: object) -> dict[str, Any]:
         self.current_event = self._to_proxy_event(event)
