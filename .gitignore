@@ -221,3 +221,7 @@ __marimo__/
 .doc/
 
 .DS_Store
+
+*/.serverless
+
+.examples

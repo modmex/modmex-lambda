@@ -6,12 +6,14 @@ from typing import Any, Callable, Iterable, TypedDict
 
 from reactivex import Observable, from_list, operators as ops
 from reactivex.scheduler import ThreadPoolScheduler
+from contextvars import Token
 
 from modmex_lambda.stream.irules_registry import IRulesRegistry
 from modmex_lambda.stream.utils.eventbridge import publish_to_event_bridge
 from modmex_lambda.stream.utils.faults import flush_faults
 from modmex_lambda.logging import Logger
 from modmex_lambda.stream.utils.operators import tap
+from modmex_lambda.stream.utils.faults import FaultHandler, active_fault_handler
 
 
 PublishFactory = Callable[[dict[str, Any]], Any]
@@ -36,74 +38,82 @@ def run(
     on_error=None,
     on_completed=None,
     concurrency=True,
+    on_fault: FaultHandler | None = None,
 ):
-    opt = {
-        'bus_name': os.getenv('BUS_NAME'),
-        'publish': _publish_to_event_bridge,
-        **(opt or {}),
-    }
-    optimal_thread_count = multiprocessing.cpu_count()
-    pool_scheduler = ThreadPoolScheduler(optimal_thread_count)
-    pipeline_logger = opt.get('logger') or Logger()
+    try:
+        opt = {
+            'bus_name': os.getenv('BUS_NAME'),
+            'publish': _publish_to_event_bridge,
+            **(opt or {}),
+        }
+        optimal_thread_count = multiprocessing.cpu_count()
+        pool_scheduler = ThreadPoolScheduler(optimal_thread_count)
+        pipeline_logger = opt.get('logger') or Logger()
+        
 
-    def make_lines(flavor):
-        source = from_list( # pylint: disable=E1102
-            copy.deepcopy(events)
-        ).pipe(
-            ops.map(lambda uow: {
-                'pipeline': flavor.id,
-                **uow,
-            }),
-            flavor,
-        )
-        source.id = flavor.id
-        return source
+        token: Token = active_fault_handler.set(on_fault)
 
-    lines = list(map(make_lines, registry.build()))
-    pending = len(lines)
-    completed = threading.Event()
-    completed_lock = threading.Lock()
+        def make_lines(flavor):
+            source = from_list( # pylint: disable=E1102
+                copy.deepcopy(events)
+            ).pipe(
+                ops.map(lambda uow: {
+                    'pipeline': flavor.id,
+                    **uow,
+                }),
+                flavor,
+            )
+            source.id = flavor.id
+            return source
 
-    if pending == 0:
-        completed.set()
+        lines = list(map(make_lines, registry.build()))
+        pending = len(lines)
+        completed = threading.Event()
+        completed_lock = threading.Lock()
 
-    def mark_completed():
-        nonlocal pending
+        if pending == 0:
+            completed.set()
 
-        with completed_lock:
-            pending -= 1
-            if pending == 0:
-                completed.set()
+        def mark_completed():
+            nonlocal pending
 
-    def _emit(source: Observable): #pylint: disable=no-self-use
-        def _on_next(pipeline_id, uow):
-            if on_next:
-                on_next(pipeline_id, uow)
+            with completed_lock:
+                pending -= 1
+                if pending == 0:
+                    completed.set()
 
-        def _on_error(pipeline_id, err):
-            if on_error:
-                on_error(pipeline_id, err)
-            mark_completed()
+        def _emit(source: Observable): #pylint: disable=no-self-use
+            def _on_next(pipeline_id, uow):
+                if on_next:
+                    on_next(pipeline_id, uow)
 
-        def _on_completed(pipeline_id):
-            if on_completed:
-                on_completed(pipeline_id)
-            mark_completed()
+            def _on_error(pipeline_id, err):
+                if on_error:
+                    on_error(pipeline_id, err)
+                mark_completed()
 
-        source.subscribe(
-            on_next=lambda i: _on_next(source.id, i),
-            on_error=lambda e: _on_error(source.id, e),
-            on_completed=lambda *_: _on_completed(source.id),
-            **({'scheduler': pool_scheduler} if concurrency else {})
-        )
+            def _on_completed(pipeline_id):
+                if on_completed:
+                    on_completed(pipeline_id)
+                mark_completed()
 
-    from_list(lines).pipe( # pylint: disable=E1102
-        tap(_emit)
-    ).subscribe()
+            source.subscribe(
+                on_next=lambda i: _on_next(source.id, i),
+                on_error=lambda e: _on_error(source.id, e),
+                on_completed=lambda *_: _on_completed(source.id),
+                **({'scheduler': pool_scheduler} if concurrency else {})
+            )
 
-    completed.wait()
-    pool_scheduler.executor.shutdown()
-    flush_faults({
-        **opt,
-        'logger': pipeline_logger,
-    })
+        from_list(lines).pipe( # pylint: disable=E1102
+            tap(_emit)
+        ).subscribe()
+
+        completed.wait()
+        pool_scheduler.executor.shutdown()
+        flush_faults({
+            **opt,
+            'logger': pipeline_logger,
+        })
+
+    finally:
+        active_fault_handler.reset(token)

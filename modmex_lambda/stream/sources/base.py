@@ -22,6 +22,7 @@ class SourceHandler(Generic[S, E]):
         on_next: Optional[Callable] = None,
         on_error: Optional[Callable] = None,
         on_completed: Optional[Callable] = None,
+        on_fault: Optional[Callable] = None,
         logger: Optional[object] = None,
         dependency_resolver: Optional[DependencyResolver] = None,
     ) -> None:
@@ -31,6 +32,7 @@ class SourceHandler(Generic[S, E]):
         self.on_next = on_next
         self.on_error = on_error
         self.on_completed = on_completed
+        self.on_fault = on_fault
         self.logger = logger or Logger()
         self.dependency_resolver = dependency_resolver or default_dependency_resolver()
         self.registry.bind(self.dependency_resolver)
@@ -57,4 +59,5 @@ class SourceHandler(Generic[S, E]):
             on_error=self.on_error,
             on_completed=self.on_completed,
             concurrency=self.concurrency,
+            on_fault=self.on_fault,
         )
