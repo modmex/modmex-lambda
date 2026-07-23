@@ -1,9 +1,7 @@
-from expects import equal, expect
-from pydash import get
-from reactivex import Observable
+import pytest
+
 from modmex_lambda.stream.flavors.task import Task
 from modmex_lambda.stream.sources.kinesis import kinesis_source
-from modmex_lambda.stream.utils.operators import try_map
 from modmex_lambda.stream.rules_registry import RulesRegistry
 from tests.stream.flavors.source_events import kinesis_event
 
@@ -19,7 +17,8 @@ PIPELINES = [
     }),
 ]
 
-def test_execute_task():
+@pytest.mark.parametrize("concurrency", [False, True])
+def test_execute_task(concurrency):
     event = kinesis_event([
         {
             "type": "task1",
@@ -51,7 +50,7 @@ def test_execute_task():
 
     @kinesis_source(
         RulesRegistry().registry(*PIPELINES),
-        concurrency=False,
+        concurrency=concurrency,
         on_next = _on_next,
         on_fault = on_fault
     )
