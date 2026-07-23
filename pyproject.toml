@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "modmex-lambda"
-version = "0.5.10"
+version = "0.5.11"
 description = "Ultra-lightweight AWS Lambda utilities for API Gateway routing and event handling."
 readme = "README.md"
 requires-python = ">=3.10,<4.0"
@@ -23,7 +23,7 @@ dependencies = [
     "pydash>=5.1.2,<9.0.0",
     "reactivex>=4.0.4,<5.0.0",
     "typing-extensions>=4.5.0,<5.0.0",
-    "modmex (>=1.1.12,<2.0.0)",
+    "modmex (>=1.2.0,<2.0.0)",
 ]
 
 [project.optional-dependencies]

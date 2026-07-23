@@ -1,6 +1,8 @@
 import os
 import traceback
 from uuid import uuid1, uuid4
+from typing import Any, Callable
+from contextvars import ContextVar
 from reactivex import operators as ops, create, Observer
 from  pydash import map_, clone_deep_with, pick
 from .time import now
@@ -9,6 +11,13 @@ from .time import now
 FAULT_EVENT_TYPE = 'fault'
 
 the_faults = []
+
+FaultHandler = Callable[[Any], None]
+
+active_fault_handler: ContextVar[FaultHandler | None] = ContextVar(
+    "reactive_fault_handler",
+    default=None,
+)
 
 
 def throw_fault(uow, ignore=False):
@@ -94,6 +103,9 @@ def _trim_and_redact(_uow):
 
 def faults(err):
     if hasattr(err, 'uow'):
+        fault_handler = active_fault_handler.get()
+        if fault_handler:
+            fault_handler(err)
         the_faults.append(format_fault(err))
     else:
         # raise unhandled/unexpected exceptions to stop processing

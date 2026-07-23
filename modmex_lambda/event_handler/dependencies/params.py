@@ -171,8 +171,6 @@ def _resolve_field_info(
 
     if origin is Annotated:
         return _resolve_annotated(annotation, value, is_path_param)
-    if _is_public_param_marker(origin):
-        return _field_from_public_marker(origin, args[0] if args else Any, value, is_path_param)
     if _is_public_param_marker(annotation):
         return _field_from_public_marker(annotation, Any, value, is_path_param)
     if origin is Response:

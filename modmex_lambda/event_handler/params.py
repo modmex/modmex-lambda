@@ -5,40 +5,36 @@ Use these markers with ``Annotated[T, Body()]`` style annotations.
 
 from __future__ import annotations
 
-from typing import Generic, TypeVar
-
 from modmex import BaseModel
 
-T = TypeVar("T")
 
-
-class Param(BaseModel, Generic[T]):
+class Param(BaseModel):
     name: str | None = None
 
 
-class Body(Param[T]):
+class Body(Param):
     pass
 
 
-class Query(Param[T]):
+class Query(Param):
     pass
 
 
-class Path(Param[T]):
+class Path(Param):
     pass
 
 
-class Header(Param[T]):
+class Header(Param):
     pass
 
 
-class Cookie(Param[T]):
+class Cookie(Param):
     pass
 
 
-class RawEvent(Param[T]):
+class RawEvent(Param):
     pass
 
 
-class LambdaContext(Param[T]):
+class LambdaContext(Param):
     pass

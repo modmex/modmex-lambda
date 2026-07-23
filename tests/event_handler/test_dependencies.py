@@ -77,6 +77,11 @@ class HeaderModel(BaseModel):
     x_tenant_id: str
 
 
+class QueryPage(BaseModel):
+    page: int = 1
+    page_size: int = 20
+
+
 CALLS = {"token": 0, "counter": 0}
 
 
@@ -272,8 +277,8 @@ def test_dependant_infers_angle_bracket_path_parameters_without_explicit_marker(
 def test_params_analyze_param_public_markers_defaults_and_errors() -> None:
     query = analyze_param(
         param_name="limit",
-        annotation=public_params.Query[int],
-        value=public_params.Query(name="limit"),
+        annotation=Annotated[int, public_params.Query(name="limit")],
+        value=inspect.Signature.empty,
         is_path_param=False,
         is_response_param=False,
     )
@@ -661,6 +666,7 @@ def test_dependency_middleware_validates_event_params_and_updates_route_args() -
     def endpoint(
         item_id: Annotated[int, public_params.Path()],
         notify: Annotated[bool, public_params.Query()],
+        query_params: Annotated[QueryPage, public_params.Query()],
         tenant_id: Annotated[str, public_params.Header(name="x-tenant-id")],
         headers: Annotated[HeaderModel, public_params.Header()],
         session: Annotated[str, public_params.Cookie()],
@@ -675,7 +681,7 @@ def test_dependency_middleware_validates_event_params_and_updates_route_args() -
                 "PUT",
                 "/items/42",
                 headers={"x-tenant-id": "mx"},
-                query={"notify": "true"},
+                query={"notify": "true", "page": "2"},
                 body={"name": "Ada", "count": "3"},
             ),
         ),
@@ -692,6 +698,7 @@ def test_dependency_middleware_validates_event_params_and_updates_route_args() -
 
     assert response.body["item_id"] == 42
     assert response.body["notify"] is True
+    assert response.body["query_params"] == QueryPage(page=2, page_size=20)
     assert response.body["tenant_id"] == "mx"
     assert response.body["headers"].x_tenant_id == "mx"
     assert response.body["session"] == "abc"
