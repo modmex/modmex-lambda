@@ -2,13 +2,13 @@ import copy
 import multiprocessing
 import os
 import threading
+from contextvars import Token
 from typing import Any, Callable, Iterable, TypedDict
 
 from reactivex import Observable, from_list, operators as ops
-from reactivex.scheduler import ThreadPoolScheduler
-from contextvars import Token
 
 from modmex_lambda.stream.irules_registry import IRulesRegistry
+from modmex_lambda.stream.schedulers import ContextThreadPoolScheduler
 from modmex_lambda.stream.utils.eventbridge import publish_to_event_bridge
 from modmex_lambda.stream.utils.faults import flush_faults
 from modmex_lambda.logging import Logger
@@ -47,7 +47,7 @@ def run(
             **(opt or {}),
         }
         optimal_thread_count = multiprocessing.cpu_count()
-        pool_scheduler = ThreadPoolScheduler(optimal_thread_count)
+        pool_scheduler = ContextThreadPoolScheduler(optimal_thread_count)
         pipeline_logger = opt.get('logger') or Logger()
         
 
