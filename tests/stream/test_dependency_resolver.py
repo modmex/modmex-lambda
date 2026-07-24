@@ -1,6 +1,9 @@
 from modmex_lambda.connectors.icloudwatch import ICloudWatchConnector
 from modmex_lambda.connectors.idynamodb import IDynamodbConnector
 from modmex_lambda.connectors.ieventbridge import IEventBridgeConnector
+from modmex_lambda.connectors.ieventbridge_scheduler import (
+    IEventBridgeSchedulerConnector,
+)
 from modmex_lambda.connectors.ilambda import ILambdaConnector
 from modmex_lambda.connectors.is3 import IS3Connector
 from modmex_lambda.connectors.isns import ISNSConnector
@@ -36,6 +39,10 @@ def test_create_dependency_resolver_provides_default_connectors():
     assert isinstance(resolver.resolve(ICloudWatchConnector), ICloudWatchConnector)
     assert isinstance(resolver.resolve(IDynamodbConnector), IDynamodbConnector)
     assert isinstance(resolver.resolve(IEventBridgeConnector), IEventBridgeConnector)
+    assert isinstance(
+        resolver.resolve(IEventBridgeSchedulerConnector),
+        IEventBridgeSchedulerConnector,
+    )
     assert isinstance(resolver.resolve(ILambdaConnector), ILambdaConnector)
     assert isinstance(resolver.resolve(IS3Connector), IS3Connector)
     assert isinstance(resolver.resolve(ISNSConnector), ISNSConnector)

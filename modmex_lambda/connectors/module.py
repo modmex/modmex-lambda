@@ -7,6 +7,9 @@ from injector import Module, provider, singleton
 from modmex_lambda.connectors.icloudwatch import ICloudWatchConnector
 from modmex_lambda.connectors.idynamodb import IDynamodbConnector
 from modmex_lambda.connectors.ieventbridge import IEventBridgeConnector
+from modmex_lambda.connectors.ieventbridge_scheduler import (
+    IEventBridgeSchedulerConnector,
+)
 from modmex_lambda.connectors.ilambda import ILambdaConnector
 from modmex_lambda.connectors.is3 import IS3Connector
 from modmex_lambda.connectors.isns import ISNSConnector
@@ -35,6 +38,13 @@ class AwsConnectorsModule(Module):
     @provider
     def provide_eventbridge(self) -> IEventBridgeConnector:
         from modmex_lambda.connectors.eventbridge import Connector
+
+        return Connector()
+
+    @singleton
+    @provider
+    def provide_eventbridge_scheduler(self) -> IEventBridgeSchedulerConnector:
+        from modmex_lambda.connectors.eventbridge_scheduler import Connector
 
         return Connector()
 

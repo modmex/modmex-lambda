@@ -1,6 +1,9 @@
 from expects import equal, expect
 from modmex_lambda.connectors.cloudwatch import Connector as CloudwatchConnector
 from modmex_lambda.connectors.eventbridge import Connector as EventbridgeConnector
+from modmex_lambda.connectors.eventbridge_scheduler import (
+    Connector as EventbridgeSchedulerConnector,
+)
 from modmex_lambda.connectors.lambda_ import Connector as LambdaConnector
 
 
@@ -19,6 +22,16 @@ class Client:
         return {
             'events': True,
         }
+
+    def create_schedule(self, **kwargs):
+        self.calls.append(('create_schedule', kwargs))
+        return {
+            'schedule': True,
+        }
+
+    def delete_schedule(self, **kwargs):
+        self.calls.append(('delete_schedule', kwargs))
+        return {}
 
     def invoke(self, **kwargs):
         self.calls.append(('invoke', kwargs))
@@ -57,6 +70,21 @@ def test_eventbridge_put_events():
         }),
     ]))
     expect(result).to(equal({'events': True}))
+
+
+def test_eventbridge_scheduler_creates_and_deletes_schedule():
+    client = Client()
+    connector = EventbridgeSchedulerConnector(client)
+
+    created = connector.create_schedule({'Name': 'once'})
+    deleted = connector.delete_schedule({'Name': 'once'})
+
+    expect(client.calls).to(equal([
+        ('create_schedule', {'Name': 'once'}),
+        ('delete_schedule', {'Name': 'once'}),
+    ]))
+    expect(created).to(equal({'schedule': True}))
+    expect(deleted).to(equal({}))
 
 
 def test_lambda_invoke():
