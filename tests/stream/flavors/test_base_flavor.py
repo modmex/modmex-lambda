@@ -3,6 +3,9 @@ from expects import equal, expect
 from modmex_lambda.connectors.icloudwatch import ICloudWatchConnector
 from modmex_lambda.connectors.idynamodb import IDynamodbConnector
 from modmex_lambda.connectors.ieventbridge import IEventBridgeConnector
+from modmex_lambda.connectors.ieventbridge_scheduler import (
+    IEventBridgeSchedulerConnector,
+)
 from modmex_lambda.connectors.ilambda import ILambdaConnector
 from modmex_lambda.connectors.is3 import IS3Connector
 from modmex_lambda.connectors.isns import ISNSConnector
@@ -15,6 +18,7 @@ from modmex_lambda.stream.operators.publisher import Publisher
 from modmex_lambda.stream.operators.s3 import S3Ops
 from modmex_lambda.stream.operators.sns import SNSOps
 from modmex_lambda.stream.operators.sqs import SQSOps
+from modmex_lambda.stream.operators.scheduler import SchedulerOps
 
 
 class Resolver:
@@ -23,6 +27,7 @@ class Resolver:
             ICloudWatchConnector: object(),
             IDynamodbConnector: object(),
             IEventBridgeConnector: object(),
+            IEventBridgeSchedulerConnector: object(),
             ILambdaConnector: object(),
             IS3Connector: object(),
             ISNSConnector: object(),
@@ -52,6 +57,7 @@ def test_base_flavor_lazily_creates_ops_and_publisher():
     expect(isinstance(flavor.s3_ops, S3Ops)).to(equal(True))
     expect(isinstance(flavor.sns_ops, SNSOps)).to(equal(True))
     expect(isinstance(flavor.sqs_ops, SQSOps)).to(equal(True))
+    expect(isinstance(flavor.scheduler_ops, SchedulerOps)).to(equal(True))
     expect(isinstance(flavor.publisher, Publisher)).to(equal(True))
     expect(flavor.publisher).to(equal(flavor.publisher))
 

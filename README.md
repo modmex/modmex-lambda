@@ -1112,6 +1112,59 @@ control_registry = (
 handler = DynamoDBSource(control_registry, concurrency=False).handle
 ```
 
+### Deferred Domain Events
+
+Use `Schedule` when a process needs a durable, one-time future event: an
+approval deadline, a retry window, an SLA check, or reconciliation after a
+communication ends. It creates an EventBridge Scheduler entry; it does not keep
+a Lambda invocation waiting.
+
+```text
+domain event -> Schedule -> EventBridge Scheduler -> EventBridge -> listener
+```
+
+The event delivered later uses the same domain-event envelope as every other
+event. Give the schedule a deterministic name and client token so a duplicate
+source event represents the same business deadline.
+
+```python
+from modmex_lambda.stream.flavors.schedule import Schedule
+from modmex_lambda.stream.rules_registry import RulesRegistry
+from modmex_lambda.stream.sources import KinesisSource
+
+registry = RulesRegistry().registry(
+    Schedule({
+        "id": "schedule-script-result-deadline",
+        "event_type": "communication-completed",
+        "delay_minutes": 5,
+        "schedule_name": lambda uow: (
+            f"script-result-deadline-{uow['event']['script_run']['id']}"
+        ),
+        "client_token": lambda uow: (
+            f"deadline-{uow['event']['script_run']['id']}"
+        ),
+        "to_event": lambda uow, _schedule, template: {
+            **template,
+            "type": "script_run-result_deadline_reached",
+            "script_run": uow["event"]["script_run"],
+        },
+    })
+)
+
+handler = KinesisSource(registry, concurrency=False).handle
+```
+
+Set `BUS_ARN` and `SCHEDULER_ROLE_ARN`, or provide `bus_arn` and
+`role_arn` in the rule. The Lambda that creates schedules needs Scheduler API
+permissions; the Scheduler execution role needs `events:PutEvents` on the
+target bus. `Schedule` uses `ActionAfterCompletion=DELETE`, so AWS removes a
+one-time schedule after delivery.
+
+Use `schedule_at` when the deadline is already an explicit, timezone-aware
+`datetime`. Use `delay_minutes` for the common case of a relative deadline; it
+is calculated from the source event's millisecond `timestamp`, not from Lambda
+processing time. Declare exactly one of those fields.
+
 ### Event Hub
 
 EventBridge is a natural hub for domain events. Flavors like
@@ -1131,6 +1184,8 @@ language and should be routed by event type, source, account, or bus.
   per-item results.
 - `Expired`: consumes DynamoDB TTL `REMOVE` records and publishes expiration
   events.
+- `Schedule`: schedules one standard domain event for a future time through
+  EventBridge Scheduler.
 - `S3`: writes objects to S3.
 - `Sns`: publishes messages to SNS.
 - `Update`: queries, gets, and updates DynamoDB records.

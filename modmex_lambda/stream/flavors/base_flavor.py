@@ -3,6 +3,9 @@ from typing import TYPE_CHECKING, Any, Generic, Optional, Type, TypeVar
 from modmex_lambda.connectors.icloudwatch import ICloudWatchConnector
 from modmex_lambda.connectors.idynamodb import IDynamodbConnector
 from modmex_lambda.connectors.ieventbridge import IEventBridgeConnector
+from modmex_lambda.connectors.ieventbridge_scheduler import (
+    IEventBridgeSchedulerConnector,
+)
 from modmex_lambda.connectors.ilambda import ILambdaConnector
 from modmex_lambda.connectors.is3 import IS3Connector
 from modmex_lambda.connectors.isns import ISNSConnector
@@ -24,6 +27,7 @@ if TYPE_CHECKING:
     from modmex_lambda.stream.operators.s3 import S3Ops
     from modmex_lambda.stream.operators.sns import SNSOps
     from modmex_lambda.stream.operators.sqs import SQSOps
+    from modmex_lambda.stream.operators.scheduler import SchedulerOps
 
 
 TEvent = TypeVar("TEvent", bound=Event)
@@ -50,6 +54,7 @@ class BaseFlavor(Generic[TEvent], IFlavor):
         self._s3_ops: Optional["S3Ops"] = None
         self._sns_ops: Optional["SNSOps"] = None
         self._sqs_ops: Optional["SQSOps"] = None
+        self._scheduler_ops: Optional["SchedulerOps"] = None
 
     def bind(self, dependency_resolver: DependencyResolver) -> "BaseFlavor[TEvent]":
         if self.dependency_resolver is None:
@@ -119,6 +124,16 @@ class BaseFlavor(Generic[TEvent], IFlavor):
                 self.resolve(ISQSConnector)
             )
         return self._sqs_ops
+
+    @property
+    def scheduler_ops(self) -> "SchedulerOps":
+        if self._scheduler_ops is None:
+            from modmex_lambda.stream.operators.scheduler import SchedulerOps
+
+            self._scheduler_ops = SchedulerOps(
+                self.resolve(IEventBridgeSchedulerConnector)
+            )
+        return self._scheduler_ops
 
     @property
     def publisher(self) -> Publisher[TEvent]:

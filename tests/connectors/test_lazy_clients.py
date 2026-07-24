@@ -2,6 +2,9 @@ from expects import equal, expect
 from modmex_lambda.connectors.cloudwatch import Connector as CloudwatchConnector
 from modmex_lambda.connectors.dynamodb import Connector as DynamoConnector
 from modmex_lambda.connectors.eventbridge import Connector as EventbridgeConnector
+from modmex_lambda.connectors.eventbridge_scheduler import (
+    Connector as EventbridgeSchedulerConnector,
+)
 from modmex_lambda.connectors.lambda_ import Connector as LambdaConnector
 from modmex_lambda.connectors.s3 import Connector as S3Connector
 from modmex_lambda.connectors.sns import Connector as SnsConnector
@@ -46,6 +49,9 @@ def test_lazy_boto_clients(monkeypatch):
 
     expect(CloudwatchConnector().client).to(equal({'client': 'cloudwatch', 'kwargs': {}}))
     expect(EventbridgeConnector().client).to(equal({'client': 'events', 'kwargs': {}}))
+    expect(EventbridgeSchedulerConnector().client).to(equal({
+        'client': 'scheduler', 'kwargs': {}
+    }))
     expect(LambdaConnector().client).to(equal({'client': 'lambda', 'kwargs': {}}))
     expect(S3Connector('bucket').client).to(equal({'client': 's3', 'kwargs': {}}))
     expect(SqsConnector('queue').client).to(equal({'client': 'sqs', 'kwargs': {}}))
@@ -60,6 +66,7 @@ def test_lazy_boto_clients(monkeypatch):
     expect(boto.client_calls).to(equal([
         (('cloudwatch',), {}),
         (('events',), {}),
+        (('scheduler',), {}),
         (('lambda',), {}),
         (('s3',), {}),
         (('sqs',), {}),
