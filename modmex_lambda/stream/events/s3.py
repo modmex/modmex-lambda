@@ -1,4 +1,4 @@
-#pylint: disable=C0301
+import json
 import pydash
 from pydash import get
 
@@ -13,6 +13,34 @@ def from_s3(event):
                 's3': record['s3'],
             },
         }
+    )
+
+def from_sqs_sns_s3(event):
+    """Normalize an S3 notification delivered through SNS and SQS.
+
+    An SNS message can contain more than one S3 record, so this function
+    returns one UOW per S3 record.  The event contract is the same as
+    :func:`from_s3`; the transport envelopes are retained in ``record``.
+    """
+    return pydash._(event['Records']).map(
+        lambda sqs_record: _from_sqs_record(sqs_record)
+    ).flatten().value()
+
+
+def _from_sqs_record(sqs_record):
+    sns_record = json.loads(sqs_record['body'])
+    s3_event = json.loads(sns_record['Message'])
+
+    return pydash.map_(
+        from_s3(s3_event),
+        lambda uow: {
+            **uow,
+            'record': {
+                'sqs': sqs_record,
+                'sns': sns_record,
+                's3': uow['record'],
+            },
+        },
     )
 
 def _calculate_event_type_prefix(record):
