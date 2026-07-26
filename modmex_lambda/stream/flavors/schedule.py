@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
+from pydash import get
 from reactivex import Observable, operators as ops
 
 from modmex_lambda.connectors.ieventbridge import IEventBridgeConnector
@@ -47,7 +48,15 @@ class Schedule(BaseFlavor):
             logger=logger,
             connector=connector,
             dependency_resolver=dependency_resolver,
-            publisher_options=publisher_options,
+            publisher_options={
+                **(publisher_options or {}),
+                "event_field": "emit",
+                **(
+                    {"source": rule["source"]}
+                    if isinstance(rule.get("source"), str)
+                    else {}
+                ),
+            },
         )
         self.rule = rule
 
@@ -57,13 +66,30 @@ class Schedule(BaseFlavor):
 
     def __call__(self, source: Observable):
         return source.pipe(
+            try_filter(self._for_collected_events),
+            try_map(self._normalize),
             try_filter(on_event_type(self.rule)),
             ops.do_action(print_start(self.logger)),
             try_filter(on_content(self.rule)),
             try_map(faulty(self._to_schedule_request)),
             self.scheduler_ops,
+            self.publisher,
             ops.do_action(print_end(self.logger)),
         )
+
+    @staticmethod
+    def _for_collected_events(uow: Uow) -> bool:
+        return (
+            get(uow, "record.eventName") == "INSERT"
+            and get(uow, "record.dynamodb.Keys.sk.S") == "EVENT"
+        )
+
+    @staticmethod
+    def _normalize(uow: Uow) -> Uow:
+        return {
+            **uow,
+            "event": get(uow, "event.raw.new.event"),
+        }
 
     def _to_schedule_request(self, uow: Uow) -> Uow:
         schedule_at = self._resolve_schedule_at(uow)
@@ -79,9 +105,16 @@ class Schedule(BaseFlavor):
             raise ValueError("bus_arn or BUS_ARN is required.")
         if not role_arn:
             raise ValueError("role_arn or SCHEDULER_ROLE_ARN is required.")
+        if schedule_at <= datetime.now(timezone.utc):
+            return {
+                **uow,
+                "scheduled_event": scheduled_event,
+                "emit": scheduled_event,
+            }
         return {
             **uow,
             "scheduled_event": scheduled_event,
+            "emit": None,
             "schedule_request": {
                 "Name": self._value("schedule_name", uow),
                 "GroupName": self._value("group_name", uow, "default"),

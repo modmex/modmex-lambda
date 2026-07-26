@@ -1165,6 +1165,10 @@ Use `schedule_at` when the deadline is already an explicit, timezone-aware
 is calculated from the source event's millisecond `timestamp`, not from Lambda
 processing time. Declare exactly one of those fields.
 
+If the calculated deadline has already passed when the source event is
+processed, `Schedule` does not create an invalid `at(...)` schedule. It
+publishes the deferred domain event immediately on the configured bus instead.
+
 ### Event Hub
 
 EventBridge is a natural hub for domain events. Flavors like
