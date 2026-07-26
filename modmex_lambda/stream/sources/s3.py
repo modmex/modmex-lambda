@@ -1,7 +1,11 @@
 from typing import Callable, Optional
 
 from modmex_lambda.dependencies import DependencyResolver
-from modmex_lambda.stream.events.s3 import from_s3
+from modmex_lambda.stream.events.s3 import (
+    from_s3,
+    from_sqs_eventbridge_s3,
+    from_sqs_sns_s3,
+)
 from modmex_lambda.stream.irules_registry import IRulesRegistry
 from modmex_lambda.stream.sources.base import SourceHandler
 
@@ -32,6 +36,18 @@ class S3Source(SourceHandler):
         )
 
 
+class SqsSnsS3Source(S3Source):
+    def __init__(self, registry: IRulesRegistry, **kwargs) -> None:
+        super().__init__(registry, **kwargs)
+        self.parser = from_sqs_sns_s3
+
+
+class SqsEventBridgeS3Source(S3Source):
+    def __init__(self, registry: IRulesRegistry, **kwargs) -> None:
+        super().__init__(registry, **kwargs)
+        self.parser = from_sqs_eventbridge_s3
+
+
 def s3_source(
     registry: IRulesRegistry,
     *,
@@ -53,3 +69,11 @@ def s3_source(
         logger=logger,
         dependency_resolver=dependency_resolver,
     )
+
+
+def sqs_sns_s3_source(registry: IRulesRegistry, **kwargs):
+    return SqsSnsS3Source(registry, **kwargs)
+
+
+def sqs_eventbridge_s3_source(registry: IRulesRegistry, **kwargs):
+    return SqsEventBridgeS3Source(registry, **kwargs)

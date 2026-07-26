@@ -13,8 +13,10 @@ from modmex_lambda.stream.sources import (
     dynamodb_source,
     kinesis_source,
     s3_source,
+    sqs_eventbridge_s3_source,
     sns_source,
     sqs_source,
+    sqs_sns_s3_source,
 )
 from modmex_lambda.stream.rules_registry import RulesRegistry
 
@@ -33,6 +35,30 @@ class BindablePipeline(DummyPipeline):
     def bind(self, dependency_resolver):
         self.dependency_resolver = dependency_resolver
         return self
+
+
+def _sqs_sns_s3_event():
+    s3_event = to_s3_records([
+        {'bucket': {'name': 'bucket'}, 'object': {'key': 'sns-object-key'}},
+    ])
+    return to_sqs_records([{
+        'body': json.dumps({'Message': json.dumps(s3_event)}),
+    }])
+
+
+def _sqs_eventbridge_s3_event():
+    return to_sqs_records([{
+        'body': json.dumps({
+            'version': '0',
+            'id': 'eventbridge-id',
+            'detail-type': 'Object Created',
+            'source': 'aws.s3',
+            'detail': {
+                'bucket': {'name': 'bucket'},
+                'object': {'key': 'eventbridge-object-key'},
+            },
+        }),
+    }])
 
 
 @pytest.mark.parametrize(
@@ -105,6 +131,12 @@ class BindablePipeline(DummyPipeline):
                 },
             ]),
             "00000000-0000-0000-0000-000000000000",
+        ),
+        (sqs_sns_s3_source, _sqs_sns_s3_event(), "sns-object-key"),
+        (
+            sqs_eventbridge_s3_source,
+            _sqs_eventbridge_s3_event(),
+            "eventbridge-object-key",
         ),
     ],
 )
@@ -313,3 +345,19 @@ def test_source_handler_binds_dependency_resolver(monkeypatch):
     )
 
     assert pipeline.dependency_resolver is dependency_resolver
+
+
+def test_sqs_sns_s3_source_uses_sns_parser():
+    from modmex_lambda.stream.events.s3 import from_sqs_sns_s3
+
+    source = sqs_sns_s3_source(RulesRegistry().registry(DummyPipeline()))
+
+    assert source.parser is from_sqs_sns_s3
+
+
+def test_sqs_eventbridge_s3_source_uses_eventbridge_parser():
+    from modmex_lambda.stream.events.s3 import from_sqs_eventbridge_s3
+
+    source = sqs_eventbridge_s3_source(RulesRegistry().registry(DummyPipeline()))
+
+    assert source.parser is from_sqs_eventbridge_s3

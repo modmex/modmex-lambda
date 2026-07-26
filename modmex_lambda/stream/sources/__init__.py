@@ -6,7 +6,14 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from modmex_lambda.stream.sources.dynamodb import DynamoDBSource, dynamodb_source
     from modmex_lambda.stream.sources.kinesis import KinesisSource, kinesis_source
-    from modmex_lambda.stream.sources.s3 import S3Source, s3_source
+    from modmex_lambda.stream.sources.s3 import (
+        S3Source,
+        SqsEventBridgeS3Source,
+        SqsSnsS3Source,
+        s3_source,
+        sqs_eventbridge_s3_source,
+        sqs_sns_s3_source,
+    )
     from modmex_lambda.stream.sources.sns import SnsSource, sns_source
     from modmex_lambda.stream.sources.sqs import SqsSource, sqs_source
 
@@ -17,6 +24,12 @@ _EXPORTS = {
     "kinesis_source": ("modmex_lambda.stream.sources.kinesis", "kinesis_source"),
     "S3Source": ("modmex_lambda.stream.sources.s3", "S3Source"),
     "s3_source": ("modmex_lambda.stream.sources.s3", "s3_source"),
+    "SqsSnsS3Source": ("modmex_lambda.stream.sources.s3", "SqsSnsS3Source"),
+    "sqs_sns_s3_source": ("modmex_lambda.stream.sources.s3", "sqs_sns_s3_source"),
+    "SqsEventBridgeS3Source": ("modmex_lambda.stream.sources.s3", "SqsEventBridgeS3Source"),
+    "sqs_eventbridge_s3_source": (
+        "modmex_lambda.stream.sources.s3", "sqs_eventbridge_s3_source"
+    ),
     "SnsSource": ("modmex_lambda.stream.sources.sns", "SnsSource"),
     "sns_source": ("modmex_lambda.stream.sources.sns", "sns_source"),
     "SqsSource": ("modmex_lambda.stream.sources.sqs", "SqsSource"),
@@ -33,6 +46,10 @@ __all__ = [
     "dynamodb_source",
     "kinesis_source",
     "s3_source",
+    "SqsSnsS3Source",
+    "sqs_sns_s3_source",
+    "SqsEventBridgeS3Source",
+    "sqs_eventbridge_s3_source",
     "sns_source",
     "sqs_source",
 ]
