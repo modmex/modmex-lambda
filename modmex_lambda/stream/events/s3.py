@@ -2,6 +2,15 @@ import json
 import pydash
 from pydash import get
 
+
+__all__ = [
+    'from_s3',
+    'from_sqs_eventbridge_s3',
+    'from_sqs_sns_s3',
+    'to_s3_records',
+]
+
+
 def from_s3(event):
     return pydash.map_(
         event['Records'],
@@ -25,6 +34,41 @@ def from_sqs_sns_s3(event):
     return pydash._(event['Records']).map(
         lambda sqs_record: _from_sqs_record(sqs_record)
     ).flatten().value()
+
+
+def from_sqs_eventbridge_s3(event):
+    """Normalize an S3 EventBridge notification delivered through SQS."""
+    return pydash._(event['Records']).map(
+        lambda sqs_record: _from_sqs_eventbridge_record(sqs_record)
+    ).flatten().value()
+
+
+def _from_sqs_eventbridge_record(sqs_record):
+    eventbridge_record = json.loads(sqs_record['body'])
+    detail = eventbridge_record['detail']
+    s3_record = {
+        **eventbridge_record,
+        'eventName': _eventbridge_s3_event_name(eventbridge_record),
+        's3': detail,
+    }
+
+    return pydash.map_(from_s3({'Records': [s3_record]}), lambda uow: {
+        **uow,
+        'record': {
+            'sqs': sqs_record,
+            'eventbridge': eventbridge_record,
+            's3': uow['record'],
+        },
+    })
+
+
+def _eventbridge_s3_event_name(eventbridge_record):
+    detail_type = eventbridge_record.get('detail-type', '')
+    if detail_type.startswith('Object Created'):
+        return 'ObjectCreated:Put'
+    if detail_type.startswith('Object Deleted'):
+        return 'ObjectCreated:Delete'
+    return detail_type
 
 
 def _from_sqs_record(sqs_record):
@@ -92,3 +136,11 @@ def to_s3_records(notifications):
             for i,n in enumerate(notifications)
         ]
     }
+
+
+__all__ = [
+    'from_s3',
+    'from_sqs_sns_s3',
+    'from_sqs_eventbridge_s3',
+    'to_s3_records',
+]
