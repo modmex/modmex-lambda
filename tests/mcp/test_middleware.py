@@ -88,3 +88,16 @@ def test_async_middleware_chain_is_supported() -> None:
 
     asyncio.run(run())
     assert seen == ["before", "after"]
+
+
+def test_http_context_is_available_to_mcp_context() -> None:
+    server = MCPServer(name="loads")
+    request = type("Request", (), {"context": {"user": {"sub": "u-1"}}})()
+
+    @server.tool()
+    def whoami(ctx: MCPContext) -> dict:
+        return ctx.context["user"]
+
+    response = server.handle(modern("tools/call", params={"name": "whoami"}), context=request)
+    assert response is not None
+    assert response.result["content"][0]["text"] == '{"sub":"u-1"}'

@@ -17,7 +17,7 @@ from modmex_lambda.mcp.registry import MCPPromptRegistry, MCPResourceRegistry
 from modmex_lambda.mcp.prompt import MCPPrompt
 from modmex_lambda.mcp.resource import MCPResource
 from modmex_lambda.mcp.tool import MCPTool
-from modmex_lambda.mcp.middleware import MCPContext, MCPMiddleware
+from modmex_lambda.mcp.middleware import MCPContext, MCPMiddleware, MCPProgressReporter, MCPCancellationToken
 
 from modmex_lambda.mcp.protocol import MCP_PROTOCOL_VERSION
 
@@ -314,7 +314,7 @@ class MCPServer:
         arguments = params.get("arguments", {})
         if not isinstance(arguments, dict):
             raise ValueError("tools/call 'arguments' must be an object")
-        output = tool.invoke(arguments, request=context, middlewares=self.middlewares, middleware_context=MCPContext(request=context, server=self, capability="tools", name=name, arguments=arguments))
+        output = tool.invoke(arguments, request=context, middlewares=self.middlewares, middleware_context=self._tool_context(context, name, arguments))
         return _tool_result(output)
 
     def _resources_list(self, params: dict[str, Any], *, context: Any = None) -> dict[str, Any]:
@@ -361,7 +361,7 @@ class MCPServer:
         arguments = params.get("arguments", {})
         if not isinstance(arguments, dict):
             raise ValueError("tools/call 'arguments' must be an object")
-        output = await tool.ainvoke(arguments, request=context, middlewares=self.middlewares, middleware_context=MCPContext(request=context, server=self, capability="tools", name=name, arguments=arguments))
+        output = await tool.ainvoke(arguments, request=context, middlewares=self.middlewares, middleware_context=self._tool_context(context, name, arguments))
         return _tool_result(output)
 
     async def _resources_read_async(self, params: dict[str, Any], *, context: Any = None) -> dict[str, Any]:
@@ -385,6 +385,16 @@ class MCPServer:
         if not isinstance(arguments, dict):
             raise ValueError("prompts/get 'arguments' must be an object")
         return {"resultType": "complete", **await prompt.aget(arguments, context=context, server=self, middlewares=self.middlewares), "ttlMs": 300000, "cacheScope": "private"}
+
+    def _tool_context(self, request: Any, name: str, arguments: dict[str, Any]) -> MCPContext:
+        state: dict[str, object] = {}
+        reporter = getattr(request, "progress_reporter", None)
+        if isinstance(reporter, MCPProgressReporter):
+            state["progress_reporter"] = reporter
+        token = getattr(request, "cancellation_token", None)
+        if isinstance(token, MCPCancellationToken):
+            state["cancellation_token"] = token
+        return MCPContext(request=request, server=self, capability="tools", name=name, arguments=arguments, state=state)
 
 
 def _json_text(value: Any) -> str:

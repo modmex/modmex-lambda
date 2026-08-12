@@ -91,9 +91,11 @@ class MCPTool:
                 dependency_overrides=dependency_overrides,
                 dependency_resolver=dependency_resolver,
             )
-            for name in ("request", "context", "ctx"):
+            if "request" in parameters and "request" not in values:
+                values["request"] = request
+            for name in ("context", "ctx"):
                 if name in parameters and name not in values:
-                    values[name] = request
+                    values[name] = ctx
             values.update(arguments)
             return self.handler(**values)
 
@@ -120,9 +122,11 @@ class MCPTool:
 
         def endpoint(ctx: MCPContext) -> Any:
             values = solve_dependencies(dependant=self.dependant, request=request, dependency_overrides=kwargs.get("dependency_overrides"), dependency_resolver=kwargs.get("dependency_resolver"))
-            for name in ("request", "context", "ctx"):
+            if "request" in parameters and "request" not in values:
+                values["request"] = request
+            for name in ("context", "ctx"):
                 if name in parameters and name not in values:
-                    values[name] = request
+                    values[name] = ctx
             values.update(arguments)
             return self.handler(**values)
 
