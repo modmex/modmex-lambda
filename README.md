@@ -1243,3 +1243,110 @@ handler = KinesisSource(registry, concurrency=False).handle
 
 - OpenAPI/Swagger generation is not implemented.
 - Async API Gateway resolver pipelines are not implemented yet.
+
+## Model Context Protocol (MCP) Server
+
+`modmex-lambda` exposes MCP `2026-07-28` through the existing
+`APIGatewayHttpResolver`. MCP is an optional adapter; it does not introduce a
+second HTTP resolver, DI system, or application lifecycle.
+
+### Basic server
+
+Tools reuse the existing dependency injection and `modmex` model schemas:
+
+```python
+from typing import Annotated
+
+from modmex import BaseModel
+from modmex_lambda import APIGatewayHttpResolver, Depends
+from modmex_lambda.mcp import MCPServer
+
+
+class Order(BaseModel):
+    customer: str
+    item: str
+
+
+app = APIGatewayHttpResolver()
+mcp = MCPServer(name="orders", version="1.0.0")
+
+
+@mcp.tool()
+def create_order(order: Order):
+    return {"status": "received", "order": order.model_dump()}
+
+
+app.include_mcp(mcp, path="/mcp")
+handler = app.handler
+```
+
+### Capabilities
+
+The server supports:
+
+- `server/discover`;
+- `tools/list` and `tools/call`;
+- `resources/list`, `resources/templates/list` and `resources/read`;
+- `prompts/list` and `prompts/get`;
+- pagination through the opaque `nextCursor` field;
+- `structuredContent` in tool results;
+- `resultType`, `ttlMs` and `cacheScope` metadata;
+- JSON responses and buffered `text/event-stream` responses.
+
+Resources and prompts are registered explicitly:
+
+```python
+@mcp.resource("orders://{order_id}", name="order")
+def order_resource(order_id: str):
+    return {"order_id": order_id}
+
+
+@mcp.prompt(name="order_assistant")
+def order_assistant_prompt():
+    return [{
+        "role": "system",
+        "content": {"type": "text", "text": "Help manage orders."},
+    }]
+```
+
+Tools are actions that an MCP client can invoke. Resources and prompts are
+read explicitly by the client application; they are not automatically
+converted into tools.
+
+### Stateless HTTP contract
+
+Every request uses protocol metadata in `_meta` and the modern HTTP headers:
+
+```text
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: create_order
+```
+
+The server does not use `initialize`, `ping` or `Mcp-Session-Id`. Requests are
+independent and may be routed to any Lambda instance. If the application needs
+state, it must pass an explicit handle in tool arguments or persist that state
+in its own services.
+
+### Middleware and authorization
+
+MCP uses the existing resolver and middleware pipeline. Authentication should
+be configured with an API Gateway authorizer or application middleware. Tool
+permissions can be implemented as capability middleware:
+
+```python
+@mcp.tool(middlewares=[PermissionMiddleware(["orders:create"])])
+def create_order(order: Order):
+    ...
+```
+
+`MCPHttpTransport` accepts `allowed_origins=[...]` when the transport should
+enforce an Origin allowlist itself. Leaving it as `None` explicitly delegates
+Origin validation to API Gateway, WAF, or application middleware.
+
+### Transport boundary
+
+JSON is the required response mode. Buffered SSE is available when the client
+requests `text/event-stream`, but this integration does not provide a
+long-lived bidirectional stream or incremental Lambda response streaming.
+Tasks, MRTR, subscriptions and real-time notifications are future extensions.

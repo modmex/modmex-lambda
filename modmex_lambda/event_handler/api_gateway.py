@@ -171,6 +171,21 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
     def include_router(self, router: Router, prefix: str = "") -> None:
         self._router.include_router(router, prefix=prefix)
 
+    def include_mcp(self, server: Any, *, path: str = "/mcp") -> None:
+        """Mount a transport-neutral MCP server as a normal HTTP route."""
+        from modmex_lambda.mcp import MCPServer
+        from modmex_lambda.mcp.transport import MCPHttpTransport
+
+        if not isinstance(server, MCPServer):
+            raise TypeError("include_mcp expects an MCPServer")
+
+        transport = MCPHttpTransport(server)
+
+        @self.route(path, method="POST", status_code=200)
+        def mcp_handler(request: Request) -> Response:
+            return transport.handle(request)
+
+
     def resolve(self, event: dict[str, Any], context: object) -> dict[str, Any]:
         self.current_event = self._to_proxy_event(event)
         self.current_context = context
