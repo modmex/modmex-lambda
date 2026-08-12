@@ -200,7 +200,7 @@ def test_streaming_transport_emits_progress_before_tool_result() -> None:
         return {"status": "done"}
 
     transport = MCPStreamingHttpTransport(server)
-    payload = modern("tools/call", params={"name": "long_running", "arguments": {}})
+    payload = modern("tools/call", params={"name": "long_running", "arguments": {}, "_meta": {"progressToken": "test-progress"}})
 
     class Request:
         json_body = payload
@@ -214,7 +214,36 @@ def test_streaming_transport_emits_progress_before_tool_result() -> None:
     response = transport.handle(Request())
     events = list(response.body)
     assert len(events) == 3
-    assert 'event: progress' in events[0]
+    assert '"method":"notifications/progress"' in events[0]
+    assert '"progressToken":"test-progress"' in events[0]
     assert '"progress":1' in events[0]
     assert '"progress":2' in events[1]
     assert 'status' in events[2]
+
+
+def test_streaming_transport_supports_async_tools_and_progress() -> None:
+    server = MCPServer(name="loads")
+
+    @server.tool()
+    async def async_tool(ctx) -> dict[str, str]:
+        assert ctx.progress is not None
+        ctx.progress.report(1, total=1, message="async")
+        return {"status": "done"}
+
+    transport = MCPStreamingHttpTransport(server)
+    payload = modern("tools/call", params={"name": "async_tool", "arguments": {}, "_meta": {"progressToken": "async-token"}})
+
+    class Request:
+        json_body = payload
+        headers = {
+            "accept": "application/json, text/event-stream",
+            "mcp-protocol-version": "2026-07-28",
+            "mcp-method": "tools/call",
+            "mcp-name": "async_tool",
+        }
+
+    response = transport.handle(Request())
+    events = list(response.body)
+    assert len(events) == 2
+    assert '"method":"notifications/progress"' in events[0]
+    assert '\\"status\\":\\"done\\"' in events[1]

@@ -12,6 +12,7 @@ def modern(method: str, *, request_id: int | str = 1, params: dict | None = None
                 "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
                 "io.modelcontextprotocol/clientInfo": {"name": "test", "version": "1"},
                 "io.modelcontextprotocol/clientCapabilities": {},
+                **((params or {}).get("_meta") or {}),
             },
         },
     }

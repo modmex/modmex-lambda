@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import base64
+import asyncio
 import queue
 import threading
 from dataclasses import dataclass
@@ -80,9 +81,9 @@ class MCPHttpTransport:
             response = JSONRPCResponse.failure(None, JSONRPCErrorCode.PARSE_ERROR, str(exc))
             return Response(body=self._model_dict(response), status_code=HTTPStatus.OK, content_type=MCP_JSON_CONTENT_TYPE)
 
-        origin = request.headers.get("origin")
-        if origin and self.allowed_origins is not None and origin not in self.allowed_origins:
-            return Response(body={"error": "Origin is not allowed"}, status_code=HTTPStatus.FORBIDDEN, content_type=content_types.APPLICATION_JSON)
+        origin_error = self._validate_origin(request)
+        if origin_error is not None:
+            return Response(body=origin_error, status_code=HTTPStatus.FORBIDDEN, content_type=content_types.APPLICATION_JSON)
         if isinstance(payload, list):
             return Response(body={"error": "Batch requests are not supported by Streamable HTTP"}, status_code=HTTPStatus.BAD_REQUEST, content_type=content_types.APPLICATION_JSON)
         if isinstance(payload, dict):
@@ -108,6 +109,12 @@ class MCPHttpTransport:
             content_type=MCP_SSE_CONTENT_TYPE if wants_sse else MCP_JSON_CONTENT_TYPE,
             headers=response_headers,
         )
+
+    def _validate_origin(self, request: Any) -> dict[str, str] | None:
+        origin = request.headers.get("origin")
+        if origin and self.allowed_origins is not None and origin not in self.allowed_origins:
+            return {"error": "Origin is not allowed"}
+        return None
 
     def _validate_headers(self, payload: dict[str, Any], headers: Any) -> Any:
         from modmex_lambda.event_handler import content_types
@@ -223,17 +230,26 @@ class MCPStreamingHttpTransport:
 
     def handle(self, request: Any) -> StreamingHTTPResponse:
         """Return a lazy SSE response for one MCP HTTP request."""
-        validation = self._http._validate_headers(request.json_body, request.headers)
-        if validation is not None:
-            body = validation.body
-            status = validation.status_code
-            content_type = validation.content_type
-            return StreamingHTTPResponse(status, content_type, {}, iter((encode_sse(body),)))
-
         payload = request.json_body
+        if not isinstance(payload, dict):
+            return StreamingHTTPResponse(
+                400,
+                MCP_JSON_CONTENT_TYPE,
+                {},
+                iter((json.dumps({"error": "Streamable HTTP request must be a JSON object"}),)),
+            )
+        origin_error = self._http._validate_origin(request)
+        if origin_error is not None:
+            return StreamingHTTPResponse(403, MCP_JSON_CONTENT_TYPE, {}, iter((json.dumps(origin_error),)))
+        validation = self._http._validate_headers(payload, request.headers)
+        if validation is not None:
+            return StreamingHTTPResponse(validation.status_code, MCP_JSON_CONTENT_TYPE, {}, iter((json.dumps(validation.body),)))
+
         if payload.get("method") == "tools/call":
             return self._handle_tool_call(request, payload)
-        response = self.server.handle(payload, context=request)
+        # The adapter has a synchronous boundary, but dispatch through the
+        # async server path so resources and prompts support async handlers too.
+        response = asyncio.run(self.server.handle_async(payload, context=request))
 
         def body() -> Iterator[str]:
             if response is not None:
@@ -242,7 +258,7 @@ class MCPStreamingHttpTransport:
         return StreamingHTTPResponse(
             status_code=202 if response is None else 200,
             content_type=MCP_SSE_CONTENT_TYPE,
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
             body=body(),
         )
 
@@ -253,11 +269,21 @@ class MCPStreamingHttpTransport:
         events: queue.Queue[tuple[str, Any]] = queue.Queue()
         cancellation_token = MCPCancellationToken()
         request.cancellation_token = cancellation_token
-        request.progress_reporter = MCPProgressReporter(lambda value: events.put(("progress", value)))
+        progress_token = (payload.get("params") or {}).get("_meta", {}).get("progressToken")
+        request.progress_reporter = (
+            MCPProgressReporter(
+                lambda value: events.put(("progress", {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/progress",
+                    "params": {"progressToken": progress_token, **value},
+                }))
+            )
+            if progress_token is not None else None
+        )
 
         def run() -> None:
             try:
-                events.put(("result", self.server.handle(payload, context=request)))
+                events.put(("result", asyncio.run(self.server.handle_async(payload, context=request))))
             except BaseException as exc:
                 events.put(("exception", exc))
             finally:
@@ -269,7 +295,7 @@ class MCPStreamingHttpTransport:
             while True:
                 kind, value = events.get()
                 if kind == "progress":
-                    yield encode_sse(SSEEvent(data=value, event="progress"))
+                    yield encode_sse(value)
                 elif kind == "result":
                     if value is not None:
                         yield encode_sse(self._http._model_dict(value))
@@ -281,7 +307,7 @@ class MCPStreamingHttpTransport:
         return StreamingHTTPResponse(
             status_code=200,
             content_type=MCP_SSE_CONTENT_TYPE,
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
             body=body(),
             cancellation_token=cancellation_token,
         )
