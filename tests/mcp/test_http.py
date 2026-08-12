@@ -55,3 +55,54 @@ def test_mcp_rejects_mismatched_modern_headers() -> None:
         body=modern("server/discover"),
     ), object())
     assert response["statusCode"] == 400
+
+
+def test_mcp_validates_tool_parameter_headers_against_arguments() -> None:
+    app = APIGatewayHttpResolver()
+    server = MCPServer(name="loads")
+
+    @server.tool()
+    def lookup(region: str, enabled: bool = False) -> dict:
+        return {"region": region, "enabled": enabled}
+
+    app.include_mcp(server)
+    base_headers = {"Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/call", "Mcp-Name": "lookup"}
+    tool = server.tools.get("lookup")
+    original_definition = tool.definition
+    definition = original_definition()
+    definition["inputSchema"]["properties"]["region"]["x-mcp-header"] = "Region"
+    definition["inputSchema"]["properties"]["enabled"]["x-mcp-header"] = "Enabled"
+    tool.definition = lambda: definition
+    payload = modern("tools/call", params={"name": "lookup", "arguments": {"region": "us-west1", "enabled": True}})
+
+    missing = app.resolve(http_v2_event("POST", "/mcp", headers=base_headers, body=payload), object())
+    assert missing["statusCode"] == 400
+    assert response_body(missing)["error"]["code"] == -32020
+
+    valid = app.resolve(http_v2_event("POST", "/mcp", headers={**base_headers, "Mcp-Param-Region": "us-west1", "Mcp-Param-Enabled": "true"}, body=payload), object())
+    assert valid["statusCode"] == 200
+
+    tampered = app.resolve(http_v2_event("POST", "/mcp", headers={**base_headers, "Mcp-Param-Region": "eu-west1", "Mcp-Param-Enabled": "true"}, body=payload), object())
+    assert tampered["statusCode"] == 400
+    assert response_body(tampered)["error"]["code"] == -32020
+
+
+def test_mcp_validates_encoded_parameter_header_values() -> None:
+    app = APIGatewayHttpResolver()
+    server = MCPServer(name="loads")
+
+    @server.tool()
+    def lookup(region: str) -> str:
+        return region
+
+    app.include_mcp(server)
+    tool = server.tools.get("lookup")
+    definition = tool.definition()
+    definition["inputSchema"]["properties"]["region"]["x-mcp-header"] = "Region"
+    tool.definition = lambda: definition
+    import base64
+    encoded = "=?base64?" + base64.b64encode("Hello, 世界".encode()).decode() + "?="
+    headers = {"Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/call", "Mcp-Name": "lookup", "Mcp-Param-Region": encoded}
+    payload = modern("tools/call", params={"name": "lookup", "arguments": {"region": "Hello, 世界"}})
+    response = app.resolve(http_v2_event("POST", "/mcp", headers=headers, body=payload), object())
+    assert response["statusCode"] == 200
