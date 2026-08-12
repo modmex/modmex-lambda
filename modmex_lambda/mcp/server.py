@@ -131,7 +131,7 @@ class MCPServer:
         try:
             parsed = self._coerce_request(request)
         except MCPError as exc:
-            response = JSONRPCResponse.failure(parsed.id, JSONRPCErrorCode.INTERNAL_ERROR, str(exc))
+            response = JSONRPCResponse.failure(request_id, JSONRPCErrorCode.INTERNAL_ERROR, str(exc))
             return None if self._is_notification(request) else response
         except ValueError as exc:
             return JSONRPCResponse.failure(

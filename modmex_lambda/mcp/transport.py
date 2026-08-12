@@ -52,7 +52,9 @@ class MCPHttpTransport:
 
     def __init__(self, server: Any, *, allowed_origins: list[str] | None = None) -> None:
         self.server = server
-        self.allowed_origins = set(allowed_origins or [])
+        # None delegates Origin policy to the host infrastructure. An
+        # explicit list is an allowlist; [] therefore denies every origin.
+        self.allowed_origins = None if allowed_origins is None else set(allowed_origins)
 
     def handle(self, request: Any) -> Any:
         from modmex_lambda.event_handler import content_types
@@ -66,7 +68,7 @@ class MCPHttpTransport:
             return Response(body=self._model_dict(response), status_code=HTTPStatus.OK, content_type=MCP_JSON_CONTENT_TYPE)
 
         origin = request.headers.get("origin")
-        if origin and self.allowed_origins and origin not in self.allowed_origins:
+        if origin and self.allowed_origins is not None and origin not in self.allowed_origins:
             return Response(body={"error": "Origin is not allowed"}, status_code=HTTPStatus.FORBIDDEN, content_type=content_types.APPLICATION_JSON)
         if isinstance(payload, list):
             return Response(body={"error": "Batch requests are not supported by Streamable HTTP"}, status_code=HTTPStatus.BAD_REQUEST, content_type=content_types.APPLICATION_JSON)

@@ -1340,6 +1340,10 @@ def create_order(order: Order):
     ...
 ```
 
+`MCPHttpTransport` accepts `allowed_origins=[...]` when the transport should
+enforce an Origin allowlist itself. Leaving it as `None` explicitly delegates
+Origin validation to API Gateway, WAF, or application middleware.
+
 ### Transport boundary
 
 JSON is the required response mode. Buffered SSE is available when the client
