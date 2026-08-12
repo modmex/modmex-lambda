@@ -44,7 +44,7 @@ class Logger:
         correlation_id_header: str = "x-correlation-id",
         level: str | int | None = None,
     ) -> None:
-        self._service = service or os.getenv("SERVICE_NAME") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") or "service"
+        self._service = service or os.getenv("SERVICE_NAME") or os.getenv("SERVICE") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") or "service"
         self._stream = stream or sys.stdout
         self._serialize = json_serializer or self._serialize_payload
         self._correlation_id_header = correlation_id_header.lower()

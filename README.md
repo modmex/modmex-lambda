@@ -1344,9 +1344,81 @@ def create_order(order: Order):
 enforce an Origin allowlist itself. Leaving it as `None` explicitly delegates
 Origin validation to API Gateway, WAF, or application middleware.
 
-### Transport boundary
+### Buffered transport boundary
 
-JSON is the required response mode. Buffered SSE is available when the client
-requests `text/event-stream`, but this integration does not provide a
-long-lived bidirectional stream or incremental Lambda response streaming.
-Tasks, MRTR, subscriptions and real-time notifications are future extensions.
+This section applies to `APIGatewayRestResolver` and
+`APIGatewayHttpResolver`. JSON is the normal response mode, and the MCP HTTP
+transport can return a buffered SSE representation when the client requests
+`text/event-stream`. These resolvers do not provide incremental Lambda
+response streaming or a long-lived bidirectional connection.
+
+For incremental response streaming, use `LambdaWebAdapterResolver` together
+with the `serverless-python-mcp` deployment plugin described below. That is a
+separate runtime path because Lambda Web Adapter owns the HTTP process and
+the response stream.
+
+MCP request/response features such as pagination, `structuredContent`, MRTR
+result handling, resources and prompts are part of the protocol implementation
+and are independent of whether the response is buffered or streamed. Long-
+lived subscriptions and server-push notification sessions are not provided by
+these Lambda integrations.
+
+### Serverless deployment and response streaming
+
+For Serverless Framework deployments, use the companion npm plugin
+[`serverless-python-mcp`](https://www.npmjs.com/package/serverless-python-mcp).
+The plugin synthesizes the Lambda functions and transport resources from
+`custom.pythonMcp`; the application still owns the resolver and middleware:
+
+```yaml
+plugins:
+  - serverless-python-mcp
+
+custom:
+  pythonMcp:
+    servers:
+      orders:
+        handler: app.handler
+        transport: url       # url, http, or httpApi
+        streaming: true
+        path: /mcp            # optional; defaults to /mcp
+```
+
+The application entrypoint is deliberately the same shape as a regular
+Serverless Lambda handler:
+
+```python
+from modmex_lambda import LambdaWebAdapterResolver
+
+from server import mcp
+
+
+app = LambdaWebAdapterResolver()
+app.include_mcp(mcp, path="/mcp")
+handler = app.handler
+```
+
+The configured value is `module.attribute`, such as `app.handler`. For
+buffered deployments Serverless invokes `handler(event, context)` directly.
+For streaming deployments the plugin stages a temporary launcher that imports
+the configured `LambdaWebAdapterHandler` and calls `handler.run()`; the
+launcher is removed after packaging. Application code never needs an
+`if __name__ == "__main__"` block or a permanent `run.sh` file.
+
+Transport mapping:
+
+- `url`: Lambda Function URL;
+- `http`: API Gateway REST API (v1);
+- `httpApi`: API Gateway HTTP API (v2).
+
+`streaming: true` is supported by `url` and `http`; `httpApi` is buffered-only.
+With `streaming: false`, all three transports are supported. Function URL
+authorizers are limited to `aws_iam` or public access. HTTP API authorizers can
+be declared globally under `provider.httpApi.authorizers` and referenced by
+name, or declared inline on an individual MCP server using Serverless'
+compatible authorizer configuration.
+
+The Lambda Web Adapter layer is attached only to streaming MCP functions and
+is selected by the function architecture (`x86_64` or `arm64`). The plugin
+uses the regional layer ARN through `AWS::Region`; it does not require a layer
+entry in the service's global `provider` configuration.

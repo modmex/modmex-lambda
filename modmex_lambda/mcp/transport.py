@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import base64
+import queue
+import threading
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 
 MCP_JSON_CONTENT_TYPE = "application/json"
@@ -19,6 +21,17 @@ class SSEEvent:
     event: str | None = None
     event_id: str | None = None
     retry: int | None = None
+
+
+@dataclass(frozen=True)
+class StreamingHTTPResponse:
+    """HTTP metadata plus a lazily-produced body for streaming adapters."""
+
+    status_code: int
+    content_type: str
+    headers: dict[str, str]
+    body: Iterator[str]
+    cancellation_token: Any = None
 
 
 def encode_sse(event: SSEEvent | Any) -> str:
@@ -193,6 +206,84 @@ class MCPHttpTransport:
             MCP_SSE_CONTENT_TYPE in accepted
             and MCP_JSON_CONTENT_TYPE in accepted
             and accepted.index(MCP_SSE_CONTENT_TYPE) < accepted.index(MCP_JSON_CONTENT_TYPE)
+        )
+
+
+class MCPStreamingHttpTransport:
+    """Produce MCP responses through an incremental SSE HTTP body.
+
+    The transport is adapter-neutral.  A web server owns the socket and
+    consumes ``StreamingHTTPResponse.body``; a disconnected writer should
+    propagate its socket exception so the generator stops immediately.
+    """
+
+    def __init__(self, server: Any, *, allowed_origins: list[str] | None = None) -> None:
+        self.server = server
+        self._http = MCPHttpTransport(server, allowed_origins=allowed_origins)
+
+    def handle(self, request: Any) -> StreamingHTTPResponse:
+        """Return a lazy SSE response for one MCP HTTP request."""
+        validation = self._http._validate_headers(request.json_body, request.headers)
+        if validation is not None:
+            body = validation.body
+            status = validation.status_code
+            content_type = validation.content_type
+            return StreamingHTTPResponse(status, content_type, {}, iter((encode_sse(body),)))
+
+        payload = request.json_body
+        if payload.get("method") == "tools/call":
+            return self._handle_tool_call(request, payload)
+        response = self.server.handle(payload, context=request)
+
+        def body() -> Iterator[str]:
+            if response is not None:
+                yield encode_sse(self._http._model_dict(response))
+
+        return StreamingHTTPResponse(
+            status_code=202 if response is None else 200,
+            content_type=MCP_SSE_CONTENT_TYPE,
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+            body=body(),
+        )
+
+    def _handle_tool_call(self, request: Any, payload: dict[str, Any]) -> StreamingHTTPResponse:
+        from modmex_lambda.mcp.middleware import MCPProgressReporter
+        from modmex_lambda.mcp.middleware import MCPCancellationToken
+
+        events: queue.Queue[tuple[str, Any]] = queue.Queue()
+        cancellation_token = MCPCancellationToken()
+        request.cancellation_token = cancellation_token
+        request.progress_reporter = MCPProgressReporter(lambda value: events.put(("progress", value)))
+
+        def run() -> None:
+            try:
+                events.put(("result", self.server.handle(payload, context=request)))
+            except BaseException as exc:
+                events.put(("exception", exc))
+            finally:
+                events.put(("done", None))
+
+        threading.Thread(target=run, daemon=True).start()
+
+        def body() -> Iterator[str]:
+            while True:
+                kind, value = events.get()
+                if kind == "progress":
+                    yield encode_sse(SSEEvent(data=value, event="progress"))
+                elif kind == "result":
+                    if value is not None:
+                        yield encode_sse(self._http._model_dict(value))
+                elif kind == "exception":
+                    raise value
+                elif kind == "done":
+                    return
+
+        return StreamingHTTPResponse(
+            status_code=200,
+            content_type=MCP_SSE_CONTENT_TYPE,
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+            body=body(),
+            cancellation_token=cancellation_token,
         )
 
 

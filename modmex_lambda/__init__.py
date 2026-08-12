@@ -19,6 +19,7 @@ __all__ = [
     "Tracer",
     "ModmexValidator",
     "ValidationError",
+    "LambdaWebAdapterResolver",
 ]
 
 
@@ -42,6 +43,7 @@ def __getattr__(name):
         "Tracer": ("modmex_lambda.tracing", "Tracer"),
         "ModmexValidator": ("modmex_lambda.validation", "ModmexValidator"),
         "ValidationError": ("modmex_lambda.validation", "ValidationError"),
+        "LambdaWebAdapterResolver": ("modmex_lambda.mcp.web_adapter", "LambdaWebAdapterResolver"),
     }.get(name)
     if target is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
