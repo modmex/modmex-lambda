@@ -1348,7 +1348,10 @@ The server supports:
 - `resultType`, `ttlMs` and `cacheScope` metadata;
 - JSON responses and buffered `text/event-stream` responses through the API
   Gateway resolvers;
-- incremental SSE response streaming through `LambdaWebAdapterResolver`.
+- incremental SSE response streaming through `LambdaWebAdapterResolver`;
+- async handlers for tools, resources and prompts in the streaming transport;
+- MCP `notifications/progress` events when the client supplies a
+  `progressToken`.
 
 Resources and prompts are registered explicitly:
 
@@ -1413,7 +1416,23 @@ response streaming or a long-lived bidirectional connection.
 For incremental response streaming, use `LambdaWebAdapterResolver` together
 with the `serverless-python-mcp` deployment plugin described below. This is a
 separate host adapter because Lambda Web Adapter owns the HTTP process and the
-response stream; the MCP server and capabilities remain the same.
+response stream; the MCP server and capabilities remain the same. The
+streaming transport executes tools, resources and prompts through the async
+dispatcher, so all three capability types may use `async def` handlers.
+
+When a tool reports progress, the client must send a `progressToken` in
+`params._meta`. The server emits standard MCP JSON-RPC progress notifications
+before the final result. Without a token, progress reports are not emitted to
+the client.
+
+Streaming responses include `Cache-Control: no-cache`,
+`Connection: keep-alive`, and `X-Accel-Buffering: no`. The Lambda Web Adapter
+and the upstream client still control the lifetime of the connection; this
+integration does not provide a durable session or bidirectional subscription.
+Malformed requests and protocol/header validation failures are returned as
+ordinary JSON error responses, even when the client advertises SSE. Successful
+streaming responses use SSE framing, with the final JSON-RPC response as the
+last event.
 
 MCP request/response features such as pagination, `structuredContent`, MRTR
 result handling, resources and prompts are part of the protocol implementation
