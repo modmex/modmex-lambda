@@ -100,9 +100,7 @@ class MCPHttpTransport:
             response_headers.update({"Cache-Control": "no-cache", "Connection": "keep-alive"})
             if body is not None:
                 body = encode_sse(body)
-        status_code = HTTPStatus.ACCEPTED if response is None else HTTPStatus.OK
-        if response is not None and response.error is not None and response.error.code == JSONRPCErrorCode.METHOD_NOT_FOUND:
-            status_code = HTTPStatus.NOT_FOUND
+        status_code = _http_status_for_response(response)
         return Response(
             body=body,
             status_code=status_code,
@@ -256,7 +254,7 @@ class MCPStreamingHttpTransport:
                 yield encode_sse(self._http._model_dict(response))
 
         return StreamingHTTPResponse(
-            status_code=202 if response is None else 200,
+            status_code=_http_status_for_response(response),
             content_type=MCP_SSE_CONTENT_TYPE,
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
             body=body(),
@@ -317,3 +315,15 @@ def _serialize(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump()
     return str(value)
+
+
+def _http_status_for_response(response: Any) -> int:
+    """Map a completed MCP response to its HTTP status consistently."""
+    if response is None:
+        return HTTPStatus.ACCEPTED
+
+    from modmex_lambda.mcp import JSONRPCErrorCode
+
+    if response.error is not None and response.error.code == JSONRPCErrorCode.METHOD_NOT_FOUND:
+        return HTTPStatus.NOT_FOUND
+    return HTTPStatus.OK

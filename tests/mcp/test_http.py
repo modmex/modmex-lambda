@@ -189,6 +189,52 @@ def test_streaming_transport_preserves_header_validation_response() -> None:
     assert "Accept must include" in "".join(response.body)
 
 
+def test_streaming_transport_rejects_invalid_origin_as_json() -> None:
+    transport = MCPStreamingHttpTransport(MCPServer(name="loads"), allowed_origins=["https://trusted.example"])
+    request = type("Request", (), {
+        "json_body": modern("server/discover"),
+        "headers": {
+            "origin": "https://evil.example",
+            "accept": "application/json, text/event-stream",
+        },
+    })()
+
+    response = transport.handle(request)
+    assert response.status_code == 403
+    assert response.content_type == "application/json"
+    assert "Origin is not allowed" in "".join(response.body)
+
+
+def test_streaming_transport_rejects_batch_payload_as_json() -> None:
+    transport = MCPStreamingHttpTransport(MCPServer(name="loads"))
+    request = type("Request", (), {
+        "json_body": [modern("server/discover")],
+        "headers": {},
+    })()
+
+    response = transport.handle(request)
+    assert response.status_code == 400
+    assert response.content_type == "application/json"
+    assert "Batch" not in "".join(response.body)
+
+
+def test_streaming_transport_maps_unknown_method_to_404() -> None:
+    transport = MCPStreamingHttpTransport(MCPServer(name="loads"))
+    payload = modern("missing/method")
+    request = type("Request", (), {
+        "json_body": payload,
+        "headers": {
+            "accept": "application/json, text/event-stream",
+            "mcp-protocol-version": "2026-07-28",
+            "mcp-method": "missing/method",
+        },
+    })()
+
+    response = transport.handle(request)
+    assert response.status_code == 404
+    assert '"code":-32601' in "".join(response.body)
+
+
 def test_streaming_transport_emits_progress_before_tool_result() -> None:
     server = MCPServer(name="loads")
 
@@ -247,3 +293,55 @@ def test_streaming_transport_supports_async_tools_and_progress() -> None:
     assert len(events) == 2
     assert '"method":"notifications/progress"' in events[0]
     assert '\\"status\\":\\"done\\"' in events[1]
+
+
+def test_streaming_transport_supports_async_resources_and_prompts() -> None:
+    server = MCPServer(name="catalog")
+
+    @server.resource("catalog://async/{item_id}")
+    async def item(item_id: str) -> dict[str, str]:
+        return {"id": item_id}
+
+    @server.prompt()
+    async def lookup_prompt() -> list[dict[str, object]]:
+        return [{"role": "user", "content": {"type": "text", "text": "async"}}]
+
+    def request(payload: dict) -> object:
+        method = payload["method"]
+        name = (payload.get("params") or {}).get("uri") or (payload.get("params") or {}).get("name")
+        headers = {
+            "accept": "application/json, text/event-stream",
+            "mcp-protocol-version": "2026-07-28",
+            "mcp-method": method,
+            **({"mcp-name": name} if name else {}),
+        }
+        return type("Request", (), {"json_body": payload, "headers": headers})()
+
+    resource = transport = MCPStreamingHttpTransport(server)
+    resource_response = transport.handle(request(modern("resources/read", params={"uri": "catalog://async/A-1"})))
+    prompt_response = transport.handle(request(modern("prompts/get", params={"name": "lookup_prompt"})))
+    assert '\\"id\\":\\"A-1\\"' in "".join(resource_response.body)
+    assert '"text":"async"' in "".join(prompt_response.body)
+
+
+def test_streaming_transport_does_not_emit_progress_without_token() -> None:
+    server = MCPServer(name="loads")
+
+    @server.tool()
+    def reports_progress(ctx) -> dict[str, str]:
+        ctx.progress.report(1, total=1)
+        return {"status": "done"}
+
+    payload = modern("tools/call", params={"name": "reports_progress", "arguments": {}})
+    request = type("Request", (), {
+        "json_body": payload,
+        "headers": {
+            "accept": "application/json, text/event-stream",
+            "mcp-protocol-version": "2026-07-28",
+            "mcp-method": "tools/call",
+            "mcp-name": "reports_progress",
+        },
+    })()
+    events = list(MCPStreamingHttpTransport(server).handle(request).body)
+    assert len(events) == 1
+    assert "notifications/progress" not in events[0]
