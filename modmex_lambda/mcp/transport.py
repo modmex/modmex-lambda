@@ -120,6 +120,45 @@ class MCPHttpTransport:
         if "io.modelcontextprotocol/clientCapabilities" not in metadata:
             response = JSONRPCResponse.failure(payload.get("id"), JSONRPCErrorCode.INVALID_PARAMS, "Missing clientCapabilities")
             return Response(body=self._model_dict(response), status_code=HTTPStatus.BAD_REQUEST, content_type=content_types.APPLICATION_JSON)
+        if method == "tools/call":
+            mismatch = self._validate_tool_parameter_headers(payload, headers)
+            if mismatch is not None:
+                return self._header_mismatch(payload, mismatch)
+        return None
+
+    def _validate_tool_parameter_headers(self, payload: dict[str, Any], headers: Any) -> str | None:
+        params = payload.get("params") or {}
+        tool = self.server.tools.get(params.get("name")) if isinstance(params.get("name"), str) else None
+        if tool is None:
+            return None
+        schema = tool.definition().get("inputSchema")
+        arguments = params.get("arguments") or {}
+        expected: dict[str, str] = {}
+
+        def visit(node: Any, value: Any) -> None:
+            if not isinstance(node, dict) or not isinstance(value, dict):
+                return
+            for name, property_schema in (node.get("properties") or {}).items():
+                if not isinstance(property_schema, dict):
+                    continue
+                header_name = property_schema.get("x-mcp-header")
+                if isinstance(header_name, str) and name in value:
+                    item = value[name]
+                    serialized = str(item).lower() if isinstance(item, bool) else str(item)
+                    expected[f"mcp-param-{header_name}".lower()] = serialized
+                if property_schema.get("type") == "object":
+                    visit(property_schema, value.get(name))
+
+        visit(schema, arguments)
+        actual = {str(key).lower(): value for key, value in headers.items()}
+        for header_name, expected_value in expected.items():
+            if header_name not in actual:
+                return f"Missing {header_name} header"
+            if self._decode_header(actual[header_name]) != expected_value:
+                return f"{header_name} does not match tool argument"
+        for header_name in actual:
+            if header_name.startswith("mcp-param-") and header_name not in expected:
+                return f"Unexpected {header_name} header"
         return None
 
     def _header_mismatch(self, payload: dict[str, Any], message: str) -> Any:
