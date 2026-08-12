@@ -1246,9 +1246,10 @@ handler = KinesisSource(registry, concurrency=False).handle
 
 ## Model Context Protocol (MCP) Server
 
-`modmex-lambda` exposes MCP `2026-07-28` through the existing
-`APIGatewayHttpResolver`. MCP is an optional adapter; it does not introduce a
-second HTTP resolver, DI system, or application lifecycle.
+`modmex-lambda` implements the MCP `2026-07-28` server runtime and adapts it to
+the existing Lambda HTTP resolvers or to Lambda Web Adapter. MCP is an
+optional adapter; it reuses the existing dependency injection, middleware and
+application lifecycle rather than introducing a parallel web framework.
 
 ### Basic server
 
@@ -1280,6 +1281,60 @@ app.include_mcp(mcp, path="/mcp")
 handler = app.handler
 ```
 
+### Choosing the resolver
+
+Choose the resolver from the AWS transport and whether the function must
+stream the HTTP response:
+
+| AWS transport | Response mode | Resolver | Entrypoint behavior |
+|---|---|---|---|
+| API Gateway HTTP API v2 | buffered | `APIGatewayHttpResolver` | `handler(event, context)` |
+| API Gateway REST API v1 | buffered | `APIGatewayRestResolver` | `handler(event, context)` |
+| Lambda Function URL | buffered | `APIGatewayHttpResolver` | `handler(event, context)` |
+| API Gateway REST API v1 | incremental streaming | `LambdaWebAdapterResolver` | `handler.run()` |
+| Lambda Function URL | incremental streaming | `LambdaWebAdapterResolver` | `handler.run()` |
+
+Function URLs use the API Gateway HTTP API payload format version 2.0, which is
+why `APIGatewayHttpResolver` is the correct buffered resolver for both HTTP API
+and Function URL invocations. The AWS event shape is not used in streaming:
+Lambda Web Adapter starts the resolver as an HTTP process and forwards HTTP
+requests to its listening port.
+
+Buffered HTTP API example:
+
+```python
+from modmex_lambda import APIGatewayHttpResolver
+
+app = APIGatewayHttpResolver()
+app.include_mcp(mcp, path="/mcp")
+handler = app.handler
+```
+
+Buffered REST API example:
+
+```python
+from modmex_lambda import APIGatewayRestResolver
+
+app = APIGatewayRestResolver()
+app.include_mcp(mcp, path="/mcp")
+handler = app.handler
+```
+
+Streaming example:
+
+```python
+from modmex_lambda import LambdaWebAdapterResolver
+
+app = LambdaWebAdapterResolver()
+app.include_mcp(mcp, path="/mcp")
+handler = app.handler
+```
+
+For the streaming example, the deployment must start the Web Adapter process;
+the `serverless-python-mcp` plugin generates that launcher automatically.
+Without the plugin, the application can start the HTTP process explicitly by
+calling `handler.run()`.
+
 ### Capabilities
 
 The server supports:
@@ -1291,7 +1346,9 @@ The server supports:
 - pagination through the opaque `nextCursor` field;
 - `structuredContent` in tool results;
 - `resultType`, `ttlMs` and `cacheScope` metadata;
-- JSON responses and buffered `text/event-stream` responses.
+- JSON responses and buffered `text/event-stream` responses through the API
+  Gateway resolvers;
+- incremental SSE response streaming through `LambdaWebAdapterResolver`.
 
 Resources and prompts are registered explicitly:
 
@@ -1323,10 +1380,11 @@ Mcp-Method: tools/call
 Mcp-Name: create_order
 ```
 
-The server does not use `initialize`, `ping` or `Mcp-Session-Id`. Requests are
-independent and may be routed to any Lambda instance. If the application needs
-state, it must pass an explicit handle in tool arguments or persist that state
-in its own services.
+The server implements the stateless `2026-07-28` HTTP contract and does not
+use `initialize`, `ping` or `Mcp-Session-Id`. Requests are independent and may
+be routed to any Lambda instance. If the application needs state, it must pass
+an explicit handle in tool arguments or persist that state in its own
+services. The runtime does not provide a session store.
 
 ### Middleware and authorization
 
@@ -1344,7 +1402,7 @@ def create_order(order: Order):
 enforce an Origin allowlist itself. Leaving it as `None` explicitly delegates
 Origin validation to API Gateway, WAF, or application middleware.
 
-### Buffered transport boundary
+### Transport boundary
 
 This section applies to `APIGatewayRestResolver` and
 `APIGatewayHttpResolver`. JSON is the normal response mode, and the MCP HTTP
@@ -1353,9 +1411,9 @@ transport can return a buffered SSE representation when the client requests
 response streaming or a long-lived bidirectional connection.
 
 For incremental response streaming, use `LambdaWebAdapterResolver` together
-with the `serverless-python-mcp` deployment plugin described below. That is a
-separate runtime path because Lambda Web Adapter owns the HTTP process and
-the response stream.
+with the `serverless-python-mcp` deployment plugin described below. This is a
+separate host adapter because Lambda Web Adapter owns the HTTP process and the
+response stream; the MCP server and capabilities remain the same.
 
 MCP request/response features such as pagination, `structuredContent`, MRTR
 result handling, resources and prompts are part of the protocol implementation
@@ -1401,7 +1459,8 @@ handler = app.handler
 The configured value is `module.attribute`, such as `app.handler`. For
 buffered deployments Serverless invokes `handler(event, context)` directly.
 For streaming deployments the plugin stages a temporary launcher that imports
-the configured `LambdaWebAdapterHandler` and calls `handler.run()`; the
+the configured handler returned by `LambdaWebAdapterResolver.handler` and calls
+`handler.run()`; the
 launcher is removed after packaging. Application code never needs an
 `if __name__ == "__main__"` block or a permanent `run.sh` file.
 
@@ -1416,7 +1475,8 @@ With `streaming: false`, all three transports are supported. Function URL
 authorizers are limited to `aws_iam` or public access. HTTP API authorizers can
 be declared globally under `provider.httpApi.authorizers` and referenced by
 name, or declared inline on an individual MCP server using Serverless'
-compatible authorizer configuration.
+compatible authorizer configuration. For `http`, authorizers are passed to the
+native REST API event compiler.
 
 The Lambda Web Adapter layer is attached only to streaming MCP functions and
 is selected by the function architecture (`x86_64` or `arm64`). The plugin
