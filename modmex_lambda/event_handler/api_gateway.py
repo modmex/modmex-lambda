@@ -252,7 +252,12 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
                     return path[len(prefix) :]
 
             if isinstance(prefix, Pattern):
-                path = re.sub(prefix, "", path)
+                # A prefix only strips the start of the path. re.sub removed every
+                # match, so "/v\d+" turned "/v1/users/7/v2/x" into "/users/7/x"
+                # and routed the request to a different handler.
+                match = prefix.match(path)
+                if match is not None and match.end() > 0:
+                    path = path[match.end():]
 
                 if not path:
                     return "/"
