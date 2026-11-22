@@ -842,6 +842,14 @@ handler = KinesisSource(
 
 Use `concurrency=False` in tests when deterministic order matters.
 
+Handled failures (steps wrapped with `faulty`) are published as `fault` events and
+do not fail the invocation. An **unexpected** error that stops a pipeline (a bug,
+an unwrapped step) is re-raised after every pipeline finished and pending faults
+were flushed, so the Lambda invocation fails and AWS retries the batch: records
+after the failure were never processed and must not be acknowledged. `on_error`
+is still called first. Pass `raise_on_error=False` to a source (or `run`) only if
+you deliberately want such errors reported through `on_error` alone.
+
 ### Publisher Options
 
 Flavors that publish to EventBridge use a shared publisher. Configure it with
