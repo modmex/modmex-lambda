@@ -863,6 +863,15 @@ after the failure were never processed and must not be acknowledged. `on_error`
 is still called first. Pass `raise_on_error=False` to a source (or `run`) only if
 you deliberately want such errors reported through `on_error` alone.
 
+Because a failing batch is retried, bound the retries on the event source so a
+record that always fails (a poison pill) cannot block the stream:
+
+- DynamoDB Streams / Kinesis: set `MaximumRetryAttempts`,
+  `BisectBatchOnFunctionError: true` (isolates the failing record) and an
+  on-failure destination (SQS/SNS) on the event source mapping. Otherwise the
+  shard retries until the record expires (24 h by default).
+- SQS: configure a dead-letter queue (`maxReceiveCount` in the redrive policy).
+
 ### Publisher Options
 
 Flavors that publish to EventBridge use a shared publisher. Configure it with
