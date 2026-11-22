@@ -451,6 +451,19 @@ def on_domain_error(exc: DomainError):
 If a custom exception handler raises, the resolver falls back to the default
 error response when one exists.
 
+An exception with no handler is re-raised: the invocation fails, so Lambda's
+`Errors` metric and alarms see it, and API Gateway answers with a generic 5xx.
+That response carries no CORS headers, so a browser reports a CORS error instead
+of the 500. If browsers call the API, register a catch-all handler, which gets
+the route's CORS headers, and log the exception so it stays visible:
+
+```python
+@app.exception_handler(Exception)
+def on_unexpected(exc: Exception):
+    logger.exception("Unhandled error")
+    return Response(status_code=500, body={"message": "Internal server error"})
+```
+
 ## CORS
 
 Pass `CORSConfig` to the resolver to add CORS headers and automatic preflight
@@ -841,6 +854,23 @@ handler = KinesisSource(
 ```
 
 Use `concurrency=False` in tests when deterministic order matters.
+
+Handled failures (steps wrapped with `faulty`) are published as `fault` events and
+do not fail the invocation. An **unexpected** error that stops a pipeline (a bug,
+an unwrapped step) is re-raised after every pipeline finished and pending faults
+were flushed, so the Lambda invocation fails and AWS retries the batch: records
+after the failure were never processed and must not be acknowledged. `on_error`
+is still called first. Pass `raise_on_error=False` to a source (or `run`) only if
+you deliberately want such errors reported through `on_error` alone.
+
+Because a failing batch is retried, bound the retries on the event source so a
+record that always fails (a poison pill) cannot block the stream:
+
+- DynamoDB Streams / Kinesis: set `MaximumRetryAttempts`,
+  `BisectBatchOnFunctionError: true` (isolates the failing record) and an
+  on-failure destination (SQS/SNS) on the event source mapping. Otherwise the
+  shard retries until the record expires (24 h by default).
+- SQS: configure a dead-letter queue (`maxReceiveCount` in the redrive policy).
 
 ### Publisher Options
 
@@ -1280,6 +1310,11 @@ def create_order(order: Order):
 app.include_mcp(mcp, path="/mcp")
 handler = app.handler
 ```
+
+Pass `allowed_origins=["https://app.example.com"]` to `include_mcp` to reject
+requests whose `Origin` header is not in the list (403). MCP asks servers to
+validate `Origin` against DNS-rebinding attacks; the default `None` leaves it to
+the infrastructure in front of the function, and `[]` denies every browser origin.
 
 ### Choosing the resolver
 

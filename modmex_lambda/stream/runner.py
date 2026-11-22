@@ -39,7 +39,19 @@ def run(
     on_completed=None,
     concurrency=True,
     on_fault: FaultHandler | None = None,
+    raise_on_error: bool = True,
 ):
+    """Run every registered pipeline over ``events``.
+
+    Handled failures (wrapped with ``faulty``) are published as fault events and
+    do not fail the invocation. An unexpected error that ends a pipeline is
+    re-raised once all pipelines finished and faults were flushed, so the Lambda
+    invocation fails and AWS retries the batch instead of acknowledging records
+    that were never processed. ``on_error`` is still called first (observability).
+    Pass ``raise_on_error=False`` to only report such errors through ``on_error``.
+    """
+    pipeline_errors: list[BaseException] = []
+    token: Token = active_fault_handler.set(on_fault)
     try:
         opt = {
             'bus_name': os.getenv('BUS_NAME'),
@@ -50,8 +62,6 @@ def run(
         pool_scheduler = ContextThreadPoolScheduler(optimal_thread_count)
         pipeline_logger = opt.get('logger') or Logger()
         
-
-        token: Token = active_fault_handler.set(on_fault)
 
         def make_lines(flavor):
             source = from_list( # pylint: disable=E1102
@@ -88,9 +98,12 @@ def run(
                     on_next(pipeline_id, uow)
 
             def _on_error(pipeline_id, err):
-                if on_error:
-                    on_error(pipeline_id, err)
-                mark_completed()
+                pipeline_errors.append(err)
+                try:
+                    if on_error:
+                        on_error(pipeline_id, err)
+                finally:
+                    mark_completed()
 
             def _on_completed(pipeline_id):
                 if on_completed:
@@ -117,3 +130,8 @@ def run(
 
     finally:
         active_fault_handler.reset(token)
+
+    if pipeline_errors and raise_on_error:
+        for extra in pipeline_errors[1:]:
+            pipeline_logger.error(f"Additional pipeline error: {extra!r}")
+        raise pipeline_errors[0]

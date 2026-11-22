@@ -68,6 +68,10 @@ class Connector(IDynamodbConnector):
         return self._unmarshall_response(response)
 
     def query_all(self, input_params):
+        # Paginate on a copy: callers often reuse a module-level params dict
+        # across warm invocations, and a leftover ExclusiveStartKey would make
+        # the next call silently start from the last page.
+        input_params = dict(input_params)
         items = []
         while True:
             result = self.query(input_params)
@@ -79,7 +83,19 @@ class Connector(IDynamodbConnector):
         return items
 
     def batch_get(self, input_params):
-        return self._batch_get(input_params, [])
+        chunks = _batch_get_chunks(input_params)
+        if len(chunks) == 1:
+            return self._batch_get(chunks[0], [])
+        results = [self._batch_get(chunk, []) for chunk in chunks]
+        responses: dict = {}
+        for result in results:
+            for table, items in result.get('Responses', {}).items():
+                responses.setdefault(table, []).extend(items)
+        return {
+            **results[-1],
+            'Responses': responses,
+            'attempts': [attempt for result in results for attempt in result.get('attempts', [])],
+        }
 
     def _batch_get(self, params, attempts):
         assert_max_retries(attempts, self.retry_config['max_retries'])
@@ -253,6 +269,31 @@ class Connector(IDynamodbConnector):
                 'Key': self._unmarshall_item(request['DeleteRequest']['Key']),
             },
         }
+
+
+BATCH_GET_MAX_KEYS = 100  # DynamoDB BatchGetItem limit, across all tables
+
+
+def _batch_get_chunks(params):
+    """Split a BatchGetItem request into requests of at most 100 keys in total."""
+    pairs = [
+        (table, key)
+        for table, request in params.get('RequestItems', {}).items()
+        for key in request.get('Keys', [])
+    ]
+    if len(pairs) <= BATCH_GET_MAX_KEYS:
+        return [params]
+    chunks = []
+    for start in range(0, len(pairs), BATCH_GET_MAX_KEYS):
+        request_items = {}
+        for table, key in pairs[start:start + BATCH_GET_MAX_KEYS]:
+            table_request = request_items.setdefault(
+                table,
+                {**params['RequestItems'][table], 'Keys': []},
+            )
+            table_request['Keys'].append(key)
+        chunks.append({**params, 'RequestItems': request_items})
+    return chunks
 
 
 def unprocessed(params, resp):

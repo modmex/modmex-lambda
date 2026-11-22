@@ -20,6 +20,7 @@ class S3Source(SourceHandler):
         on_error: Optional[Callable] = None,
         on_completed: Optional[Callable] = None,
         on_fault: Optional[Callable] = None,
+        raise_on_error: bool = True,
         logger: Optional[object] = None,
         dependency_resolver: Optional[DependencyResolver] = None,
     ) -> None:
@@ -31,6 +32,7 @@ class S3Source(SourceHandler):
             on_error=on_error,
             on_completed=on_completed,
             on_fault=on_fault,
+            raise_on_error=raise_on_error,
             logger=logger,
             dependency_resolver=dependency_resolver,
         )
@@ -56,6 +58,7 @@ def s3_source(
     on_error: Optional[Callable] = None,
     on_completed: Optional[Callable] = None,
     on_fault: Optional[Callable] = None,
+    raise_on_error: bool = True,
     logger: Optional[object] = None,
     dependency_resolver: Optional[DependencyResolver] = None,
 ):
@@ -66,6 +69,7 @@ def s3_source(
         on_error=on_error,
         on_completed=on_completed,
         on_fault=on_fault,
+        raise_on_error=raise_on_error,
         logger=logger,
         dependency_resolver=dependency_resolver,
     )

@@ -171,15 +171,27 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
     def include_router(self, router: Router, prefix: str = "") -> None:
         self._router.include_router(router, prefix=prefix)
 
-    def include_mcp(self, server: Any, *, path: str = "/mcp") -> None:
-        """Mount a transport-neutral MCP server as a normal HTTP route."""
+    def include_mcp(
+        self,
+        server: Any,
+        *,
+        path: str = "/mcp",
+        allowed_origins: list[str] | None = None,
+    ) -> None:
+        """Mount a transport-neutral MCP server as a normal HTTP route.
+
+        ``allowed_origins`` is an allowlist for the ``Origin`` header (MCP asks
+        servers to validate it against DNS-rebinding attacks); ``None`` leaves the
+        policy to the infrastructure in front of the function, ``[]`` denies every
+        browser origin.
+        """
         from modmex_lambda.mcp import MCPServer
         from modmex_lambda.mcp.transport import MCPHttpTransport
 
         if not isinstance(server, MCPServer):
             raise TypeError("include_mcp expects an MCPServer")
 
-        transport = MCPHttpTransport(server)
+        transport = MCPHttpTransport(server, allowed_origins=allowed_origins)
 
         @self.route(path, method="POST", status_code=200)
         def mcp_handler(request: Request) -> Response:
@@ -252,7 +264,12 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
                     return path[len(prefix) :]
 
             if isinstance(prefix, Pattern):
-                path = re.sub(prefix, "", path)
+                # A prefix only strips the start of the path. re.sub removed every
+                # match, so "/v\d+" turned "/v1/users/7/v2/x" into "/users/7/x"
+                # and routed the request to a different handler.
+                match = prefix.match(path)
+                if match is not None and match.end() > 0:
+                    path = path[match.end():]
 
                 if not path:
                     return "/"

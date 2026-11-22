@@ -767,3 +767,27 @@ def test_cache_control_and_gzip_compression() -> None:
     assert response["headers"]["Content-Encoding"] == "gzip"
     assert response["isBase64Encoded"] is True
     assert json.loads(gzip.decompress(base64.b64decode(response["body"]))) == {"message": "hello"}
+
+
+def test_regex_strip_prefix_only_strips_the_start_of_the_path():
+    import re
+
+    from modmex_lambda import APIGatewayRestResolver
+
+    app = APIGatewayRestResolver(strip_prefixes=[re.compile(r"/v\d+")])
+
+    @app.get("/users/<uid>/v2/settings")
+    def versioned_settings(uid):
+        return {"handler": "versioned", "uid": uid}
+
+    @app.get("/users/<uid>/settings")
+    def plain_settings(uid):
+        return {"handler": "plain", "uid": uid}
+
+    event = {
+        "httpMethod": "GET", "path": "/v1/users/7/v2/settings", "resource": "/{proxy+}",
+        "headers": {}, "requestContext": {"stage": "prod"},
+        "queryStringParameters": None, "body": None, "isBase64Encoded": False,
+    }
+    assert app.resolve(event, None)["body"] == '{"handler":"versioned","uid":"7"}'
+    assert app.resolve({**event, "path": "/v1"}, None)["statusCode"] == 404  # stripped to "/"
