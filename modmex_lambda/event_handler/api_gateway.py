@@ -171,15 +171,27 @@ class ApiGatewayResolver(BaseRouter, IApiGatewayResolver):
     def include_router(self, router: Router, prefix: str = "") -> None:
         self._router.include_router(router, prefix=prefix)
 
-    def include_mcp(self, server: Any, *, path: str = "/mcp") -> None:
-        """Mount a transport-neutral MCP server as a normal HTTP route."""
+    def include_mcp(
+        self,
+        server: Any,
+        *,
+        path: str = "/mcp",
+        allowed_origins: list[str] | None = None,
+    ) -> None:
+        """Mount a transport-neutral MCP server as a normal HTTP route.
+
+        ``allowed_origins`` is an allowlist for the ``Origin`` header (MCP asks
+        servers to validate it against DNS-rebinding attacks); ``None`` leaves the
+        policy to the infrastructure in front of the function, ``[]`` denies every
+        browser origin.
+        """
         from modmex_lambda.mcp import MCPServer
         from modmex_lambda.mcp.transport import MCPHttpTransport
 
         if not isinstance(server, MCPServer):
             raise TypeError("include_mcp expects an MCPServer")
 
-        transport = MCPHttpTransport(server)
+        transport = MCPHttpTransport(server, allowed_origins=allowed_origins)
 
         @self.route(path, method="POST", status_code=200)
         def mcp_handler(request: Request) -> Response:

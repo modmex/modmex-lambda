@@ -451,6 +451,19 @@ def on_domain_error(exc: DomainError):
 If a custom exception handler raises, the resolver falls back to the default
 error response when one exists.
 
+An exception with no handler is re-raised: the invocation fails, so Lambda's
+`Errors` metric and alarms see it, and API Gateway answers with a generic 5xx.
+That response carries no CORS headers, so a browser reports a CORS error instead
+of the 500. If browsers call the API, register a catch-all handler, which gets
+the route's CORS headers, and log the exception so it stays visible:
+
+```python
+@app.exception_handler(Exception)
+def on_unexpected(exc: Exception):
+    logger.exception("Unhandled error")
+    return Response(status_code=500, body={"message": "Internal server error"})
+```
+
 ## CORS
 
 Pass `CORSConfig` to the resolver to add CORS headers and automatic preflight
@@ -1288,6 +1301,11 @@ def create_order(order: Order):
 app.include_mcp(mcp, path="/mcp")
 handler = app.handler
 ```
+
+Pass `allowed_origins=["https://app.example.com"]` to `include_mcp` to reject
+requests whose `Origin` header is not in the list (403). MCP asks servers to
+validate `Origin` against DNS-rebinding attacks; the default `None` leaves it to
+the infrastructure in front of the function, and `[]` denies every browser origin.
 
 ### Choosing the resolver
 
